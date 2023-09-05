@@ -1,0 +1,7 @@
+PROGRAM       = STAT*
+
+STAT          = RETURN
+
+RETURN        = return EXPR;
+
+EXPR          = int
