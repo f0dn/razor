@@ -4,9 +4,9 @@ pub struct Token {
 }
 
 pub enum TokenType {
-    RET,
-    INT,
-    SEMI,
+    Ret,
+    Int,
+    Semi,
 }
 
 pub struct Tokenizer {
@@ -41,7 +41,7 @@ impl Tokenizer {
         }
         match token.as_str() {
             "return" => self.tokens.push(Token {
-                t_type: RET,
+                t_type: Ret,
                 val: None,
             }),
             _ => panic!("Not a valid word"),
@@ -64,7 +64,7 @@ impl Tokenizer {
             }
         }
         self.tokens.push(Token {
-            t_type: INT,
+            t_type: Int,
             val: Some(val),
         });
     }
@@ -76,7 +76,7 @@ impl Tokenizer {
                 Some(ch) => match ch {
                     ';' => {
                         self.tokens.push(Token {
-                            t_type: SEMI,
+                            t_type: Semi,
                             val: None,
                         });
                         self.next();
