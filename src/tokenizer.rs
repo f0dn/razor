@@ -7,6 +7,9 @@ pub enum TokenType {
     Ret,
     Int,
     Semi,
+    Decl,
+    Eq,
+    Id,
 }
 
 pub struct Tokenizer {
@@ -44,7 +47,14 @@ impl Tokenizer {
                 t_type: Ret,
                 val: None,
             }),
-            _ => panic!("Not a valid word"),
+            "decl" => self.tokens.push(Token {
+                t_type: Decl,
+                val: None,
+            }),
+            _ => self.tokens.push(Token {
+                t_type: Id,
+                val: Some(token),
+            }),
         }
     }
 
@@ -77,6 +87,13 @@ impl Tokenizer {
                     ';' => {
                         self.tokens.push(Token {
                             t_type: Semi,
+                            val: None,
+                        });
+                        self.next();
+                    }
+                    '=' => {
+                        self.tokens.push(Token {
+                            t_type: Eq,
                             val: None,
                         });
                         self.next();

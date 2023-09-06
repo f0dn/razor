@@ -1,7 +1,11 @@
-PROGRAM       = STAT*
+PROGRAM       : STAT*
 
-STAT          = RETURN
+STAT          : RETURN or
+                DECL
 
-RETURN        = return EXPR;
+RETURN        : return EXPR;
 
-EXPR          = int
+DECL          : decl id = EXPR;
+
+EXPR          : int or
+                id
