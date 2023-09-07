@@ -7,5 +7,11 @@ RETURN        : return EXPR;
 
 DECL          : decl id = EXPR;
 
-EXPR          : int or
+EXPR          : BINOP or
+                int or
                 id
+
+BINOP         : EXPR + EXPR or      prec = 1
+                EXPR - EXPR or      prec = 1
+                EXPR * EXPR or      prec = 2
+                EXPR / EXPR         prec = 2

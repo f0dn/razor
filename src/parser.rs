@@ -1,12 +1,21 @@
+use std::collections::HashMap;
+
 use crate::tokenizer::*;
+
+pub struct BinOp {
+    pub op: TokenType,
+    pub lhs: Box<Expr>,
+    pub rhs: Box<Expr>,
+}
 
 pub enum Expr {
     ExprInt(String),
     ExprId(String),
+    ExprBinOp(BinOp),
 }
 
 pub struct StmtDecl {
-    pub id: String,
+    pub var: String,
     pub expr: Expr,
 }
 
@@ -26,41 +35,83 @@ pub struct Prog {
 pub struct Parser {
     tokens: Vec<Token>,
     pos: i32,
+    op: HashMap<TokenType, i8>,
     pub parse_tree: Prog,
 }
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Parser {
+        use TokenType::*;
         return Parser {
             tokens,
             pos: 0,
+            op: HashMap::from([
+                (Star, 2),
+                (Slash, 2),
+                (Plus, 1),
+                (Dash, 1),
+            ]),
             parse_tree: Prog { stmts: Vec::new() },
         };
     }
 
-    fn parse_expr(&mut self) -> Expr {
-        use TokenType::*;
+    fn parse_atom(&mut self) -> Expr {
         use Expr::*;
+        use TokenType::*;
         let tk = self.peek().expect("Not a valid expression");
         match tk.t_type {
             Int => {
-                let int = tk.val.clone().expect("Int with no value");
+                let int = tk.val.clone().unwrap();
                 self.next();
                 return ExprInt(int);
             }
-            Id => {
-                let id = tk.val.clone().expect("Id with no value");
+            Var => {
+                let var = tk.val.clone().unwrap();
                 self.next();
-                return ExprId(id);
+                return ExprId(var);
+            }
+            LPar => {
+                self.next();
+                let expr = self.parse_expr(1);
+                match self.peek().expect("Not a valid expression").t_type {
+                    RPar => {
+                        self.next();
+                        return expr;
+                    }
+                    _ => panic!("Missing ')'"),
+                }
             }
             _ => panic!("Not a valid expression"),
         }
     }
 
+
+    fn parse_expr(&mut self, min_prec: i8) -> Expr {
+        let mut lhs = self.parse_atom();
+
+        loop {
+            let tk = self.peek().expect("Missing ';'");
+            let prec = self.op.get(&tk.t_type).copied();
+            if prec.is_none() || prec.unwrap() < min_prec {
+                break;
+            }
+
+            let op = tk.t_type.clone();
+            self.next();
+            let rhs = self.parse_expr(prec.unwrap() + 1);
+            lhs = Expr::ExprBinOp(BinOp {
+                op,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            });
+        }
+        return lhs;
+    }
+
     fn parse_ret(&mut self) -> StmtRet {
         use TokenType::*;
         self.next();
-        let expr = self.parse_expr();
+        let expr = self.parse_expr(1);
         match self.peek().expect("Not a valid return").t_type {
             Semi => {
                 self.next();
@@ -75,8 +126,8 @@ impl Parser {
         self.next();
 
         let tk = self.peek().expect("Not a valid declaration");
-        let id = match tk.t_type {
-            Id => tk.val.clone().expect("Id with no value"),
+        let var = match tk.t_type {
+            Var => tk.val.clone().unwrap(),
             _ => panic!("Not a valid declaration"),
         };
         self.next();
@@ -84,7 +135,7 @@ impl Parser {
         let expr = match self.peek().expect("Not a valid declaration").t_type {
             Eq => {
                 self.next();
-                self.parse_expr()
+                self.parse_expr(1)
             }
             _ => panic!("Not a valid declaration"),
         };
@@ -92,7 +143,7 @@ impl Parser {
         match self.peek().expect("Not a valid declaration").t_type {
             Semi => {
                 self.next();
-                return StmtDecl { id, expr };
+                return StmtDecl { var, expr };
             }
             _ => panic!("Not a valid declaration"),
         }
@@ -125,10 +176,6 @@ impl Parser {
 
     fn peek(&self) -> Option<&Token> {
         return self.tokens.get(self.pos as usize);
-    }
-
-    fn peek_mult(&self, n: i32) -> Option<&Token> {
-        return self.tokens.get((self.pos - 1 + n) as usize);
     }
 
     fn next(&mut self) {

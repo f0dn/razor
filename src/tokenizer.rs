@@ -3,13 +3,27 @@ pub struct Token {
     pub val: Option<String>,
 }
 
+#[derive(PartialEq, Eq, Hash, Clone)]
 pub enum TokenType {
+    // Keywords
     Ret,
-    Int,
-    Semi,
     Decl,
+
+    // Symbols
+    Semi,
     Eq,
-    Id,
+    Star,
+    Plus,
+    Dash,
+    Slash,
+    LPar,
+    RPar,
+
+    // Literals
+    Int,
+
+    // Identifiers
+    Var,
 }
 
 pub struct Tokenizer {
@@ -52,7 +66,7 @@ impl Tokenizer {
                 val: None,
             }),
             _ => self.tokens.push(Token {
-                t_type: Id,
+                t_type: Var,
                 val: Some(token),
             }),
         }
@@ -84,20 +98,14 @@ impl Tokenizer {
         loop {
             match self.peek() {
                 Some(ch) => match ch {
-                    ';' => {
-                        self.tokens.push(Token {
-                            t_type: Semi,
-                            val: None,
-                        });
-                        self.next();
-                    }
-                    '=' => {
-                        self.tokens.push(Token {
-                            t_type: Eq,
-                            val: None,
-                        });
-                        self.next();
-                    }
+                    ';' => self.push_sym(Semi),
+                    '=' => self.push_sym(Eq),
+                    '*' => self.push_sym(Star),
+                    '+' => self.push_sym(Plus),
+                    '-' => self.push_sym(Dash),
+                    '/' => self.push_sym(Slash),
+                    '(' => self.push_sym(LPar),
+                    ')' => self.push_sym(RPar),
                     ' ' | '\n' | '\r' => self.next(),
                     'a'..='z' | 'A'..='Z' => self.tokenize_word(),
                     '0'..='9' => self.tokenize_num(),
@@ -114,5 +122,13 @@ impl Tokenizer {
 
     fn next(&mut self) {
         self.pos += 1;
+    }
+
+    fn push_sym(&mut self, t_type: TokenType) {
+        self.tokens.push(Token {
+            t_type,
+            val: None,
+        });
+        self.next();
     }
 }
