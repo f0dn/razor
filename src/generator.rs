@@ -1,3 +1,5 @@
+use std::fmt::format;
+
 use crate::parser::*;
 use crate::tokenizer::TokenType::*;
 
@@ -5,6 +7,7 @@ pub struct Generator {
     pub string: String,
     vars: Vec<(String, usize)>,
     stack_size: usize,
+    num_ifs: usize,
 }
 
 impl Generator {
@@ -19,6 +22,7 @@ main:\n";
             string: String::from(base),
             vars: Vec::new(),
             stack_size: 0,
+            num_ifs: 0,
         };
     }
 
@@ -62,6 +66,17 @@ main:\n";
         }
     }
 
+    fn gen_if(&mut self, stmt_if: StmtIf) {
+        self.gen_expr(stmt_if.expr);
+        self.string.push_str("    test rax, rax\n");
+        self.string.push_str(&format!("    jz .if_{}\n", self.num_ifs));
+        self.string.push_str(&format!("    jmp .end_if_{}\n", self.num_ifs));
+        self.string.push_str(&format!(".if_{}:\n", self.num_ifs));
+        self.gen(Prog { stmts: stmt_if.stmts });
+        self.string.push_str(&format!(".end_if_{}:\n", self.num_ifs));
+        self.num_ifs += 1;
+    }
+
     fn gen_decl(&mut self, stmt_decl: StmtDecl) {
         for (var, _) in self.vars.iter() {
             if var == &stmt_decl.var {
@@ -85,6 +100,7 @@ main:\n";
             match stmt {
                 StmtRet(stmt_ret) => self.gen_ret(stmt_ret),
                 StmtDecl(stmt_decl) => self.gen_decl(stmt_decl),
+                StmtIf(stmt_if) => self.gen_if(stmt_if),
             }
         }
     }

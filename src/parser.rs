@@ -14,6 +14,11 @@ pub enum Expr {
     ExprBinOp(BinOp),
 }
 
+pub struct StmtIf {
+    pub expr: Expr,
+    pub stmts: Vec<Stmt>,
+}
+
 pub struct StmtDecl {
     pub var: String,
     pub expr: Expr,
@@ -26,6 +31,7 @@ pub struct StmtRet {
 pub enum Stmt {
     StmtRet(StmtRet),
     StmtDecl(StmtDecl),
+    StmtIf(StmtIf),
 }
 
 pub struct Prog {
@@ -108,6 +114,32 @@ impl Parser {
         return lhs;
     }
 
+    fn parse_if(&mut self) -> StmtIf {
+        use TokenType::*;
+        self.next();
+        let expr = self.parse_expr(1);
+        match self.peek().expect("Not a valid if").t_type {
+            LBr => {
+                self.next();
+                let mut stmts = Vec::new();
+                loop {
+                    match self.peek().expect("Not a valid if").t_type {
+                        RBr => {
+                            self.next();
+                            break;
+                        }
+                        _ => {
+                            let stmt = self.parse_stmt().expect("Not a valid if");
+                            stmts.push(stmt);
+                        }
+                    }
+                }
+                return StmtIf { expr, stmts };
+            }
+            _ => panic!("Not a valid if"),
+        }
+    }
+
     fn parse_ret(&mut self) -> StmtRet {
         use TokenType::*;
         self.next();
@@ -149,26 +181,28 @@ impl Parser {
         }
     }
 
-    pub fn parse(&mut self) {
+    pub fn parse_stmt(&mut self) -> Option<Stmt> {
         use Stmt::*;
         use TokenType::*;
+        match self.peek() {
+            Some(tk) => match tk.t_type {
+                Ret => return Some(StmtRet(self.parse_ret())),
+                Decl => return Some(StmtDecl(self.parse_decl())),
+                If => return Some(StmtIf(self.parse_if())),
+                Semi => {
+                    self.next();
+                    return self.parse_stmt();
+                }
+                _ => panic!("Not a valid statement"),
+            },
+            None => return None,
+        }
+    }
+
+    pub fn parse(&mut self) {
         loop {
-            match self.peek() {
-                Some(tk) => match tk.t_type {
-                    Ret => {
-                        let ret = self.parse_ret();
-                        self.parse_tree.stmts.push(StmtRet(ret));
-                    }
-                    Decl => {
-                        let decl = self.parse_decl();
-                        self.parse_tree.stmts.push(StmtDecl(decl));
-                    }
-                    Semi => {
-                        self.next();
-                        continue;
-                    }
-                    _ => panic!("Not a valid statement"),
-                },
+            match self.parse_stmt() {
+                Some(stmt) => self.parse_tree.stmts.push(stmt),
                 None => break,
             }
         }

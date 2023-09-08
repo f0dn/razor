@@ -8,6 +8,7 @@ pub enum TokenType {
     // Keywords
     Ret,
     Decl,
+    If,
 
     // Symbols
     Semi,
@@ -18,6 +19,8 @@ pub enum TokenType {
     Slash,
     LPar,
     RPar,
+    LBr,
+    RBr,
 
     // Literals
     Int,
@@ -57,14 +60,9 @@ impl Tokenizer {
             }
         }
         match token.as_str() {
-            "return" => self.tokens.push(Token {
-                t_type: Ret,
-                val: None,
-            }),
-            "decl" => self.tokens.push(Token {
-                t_type: Decl,
-                val: None,
-            }),
+            "return" => self.push_sym(Ret),
+            "decl" => self.push_sym(Decl),
+            "if" => self.push_sym(If),
             _ => self.tokens.push(Token {
                 t_type: Var,
                 val: Some(token),
@@ -106,6 +104,8 @@ impl Tokenizer {
                     '/' => self.push_sym(Slash),
                     '(' => self.push_sym(LPar),
                     ')' => self.push_sym(RPar),
+                    '{' => self.push_sym(LBr),
+                    '}' => self.push_sym(RBr),
                     ' ' | '\n' | '\r' => self.next(),
                     'a'..='z' | 'A'..='Z' => self.tokenize_word(),
                     '0'..='9' => self.tokenize_num(),

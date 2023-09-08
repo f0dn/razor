@@ -1,7 +1,8 @@
 PROGRAM       : STAT*
 
 STAT          : RETURN or
-                DECL
+                DECL or
+                IF
 
 RETURN        : return EXPR;
 
@@ -15,3 +16,5 @@ BINOP         : EXPR + EXPR or      prec = 1
                 EXPR - EXPR or      prec = 1
                 EXPR * EXPR or      prec = 2
                 EXPR / EXPR         prec = 2
+
+IF            : if EXPR { STAT* }
