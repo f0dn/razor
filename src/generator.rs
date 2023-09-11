@@ -1,5 +1,3 @@
-use std::fmt::format;
-
 use crate::parser::*;
 use crate::tokenizer::TokenType::*;
 
@@ -101,6 +99,7 @@ main:\n";
                 StmtRet(stmt_ret) => self.gen_ret(stmt_ret),
                 StmtDecl(stmt_decl) => self.gen_decl(stmt_decl),
                 StmtIf(stmt_if) => self.gen_if(stmt_if),
+                StmtBlank => continue,
             }
         }
     }

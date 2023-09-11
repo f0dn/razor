@@ -1,6 +1,7 @@
 pub struct Token {
     pub t_type: TokenType,
     pub val: Option<String>,
+    pub line: i32,
 }
 
 #[derive(PartialEq, Eq, Hash, Clone)]
@@ -27,11 +28,15 @@ pub enum TokenType {
 
     // Identifiers
     Var,
+
+    // End of file
+    Eof,
 }
 
 pub struct Tokenizer {
     text: String,
     pos: i32,
+    line: i32,
     pub tokens: Vec<Token>,
 }
 
@@ -40,6 +45,7 @@ impl Tokenizer {
         return Tokenizer {
             text,
             pos: 0,
+            line: 1,
             tokens: Vec::new(),
         };
     }
@@ -66,6 +72,7 @@ impl Tokenizer {
             _ => self.tokens.push(Token {
                 t_type: Var,
                 val: Some(token),
+                line: self.line,
             }),
         }
     }
@@ -88,6 +95,7 @@ impl Tokenizer {
         self.tokens.push(Token {
             t_type: Int,
             val: Some(val),
+            line: self.line,
         });
     }
 
@@ -106,12 +114,19 @@ impl Tokenizer {
                     ')' => self.push_sym(RPar),
                     '{' => self.push_sym(LBr),
                     '}' => self.push_sym(RBr),
-                    ' ' | '\n' | '\r' => self.next(),
+                    ' ' => self.next(),
+                    '\n' | '\r' => {
+                        self.next();
+                        self.line += 1;
+                    }
                     'a'..='z' | 'A'..='Z' => self.tokenize_word(),
                     '0'..='9' => self.tokenize_num(),
-                    _ => panic!("Not a valid token {:?}", ch),
+                    _ => panic!("Unexpected '{}' at line {}", ch, self.line),
                 },
-                None => break,
+                None => {
+                    self.push_sym(Eof);
+                    break;
+                }
             }
         }
     }
@@ -128,6 +143,7 @@ impl Tokenizer {
         self.tokens.push(Token {
             t_type,
             val: None,
+            line: self.line,
         });
         self.next();
     }
