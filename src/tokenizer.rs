@@ -33,6 +33,30 @@ pub enum TokenType {
     Eof,
 }
 
+impl TokenType {
+    pub fn val(&self) -> &str {
+        use TokenType::*;
+        match self {
+            Ret => "return",
+            Decl => "decl",
+            If => "if",
+            Semi => ";",
+            Eq => "=",
+            Star => "*",
+            Plus => "+",
+            Dash => "-",
+            Slash => "/",
+            LPar => "(",
+            RPar => ")",
+            LBr => "{",
+            RBr => "}",
+            Int => "int",
+            Var => "var",
+            Eof => "EOF",
+        }
+    }
+}
+
 pub struct Tokenizer {
     text: String,
     pos: i32,

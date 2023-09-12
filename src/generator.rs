@@ -58,7 +58,7 @@ main:\n";
                         self.string.push_str("    mov edx, 0\n");
                         self.string.push_str("    div rcx\n");
                     }
-                    _ => panic!("Unknown operator"),
+                    _ => panic!("Unknown operator: {}", bin_op.op.val()),
                 }
             }
         }

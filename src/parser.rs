@@ -48,7 +48,7 @@ pub struct Parser {
 }
 
 macro_rules! parse_fn {
-    ($name:ident -> $ret:ident {
+    ($name:ident -> $ret:ident($e_msg:literal) {
         $($({$tk:pat}$( => $tk_field:ident)?)?,
           $($func:ident($($arg:expr)?) => $func_field:ident, )?
         )+}
@@ -58,7 +58,7 @@ macro_rules! parse_fn {
                 $(
                     $(
                         $(let $tk_field;)?
-                        let tk = self.peek().expect("Not a valid if");
+                        let tk = self.peek().expect($e_msg);
                         match &tk.t_type {
                             $tk => {
                                 $(
@@ -66,7 +66,7 @@ macro_rules! parse_fn {
                                 )?
                                 self.next();
                             }
-                            _ => panic!("Not a valid if"),
+                            _ => Parser::error("Unexpected {}", &tk),
                         }
                     )?
 
@@ -93,7 +93,7 @@ macro_rules! parse_fn {
 }
 
 parse_fn! {
-    parse_if -> StmtIf {
+    parse_if -> StmtIf("Incomplete if statement") {
         {If}, parse_expr() => expr, {LBr},
             parse_mult(RBr) => stmts,
         {RBr},
@@ -101,13 +101,13 @@ parse_fn! {
 }
 
 parse_fn! {
-    parse_ret -> StmtRet {
+    parse_ret -> StmtRet("Incomplete return statement") {
         {Ret}, parse_expr() => expr, {Semi},
     }
 }
 
 parse_fn! {
-    parse_decl -> StmtDecl {
+    parse_decl -> StmtDecl("Incomplete variable delcaration") {
         {Decl}, {Var} => var, {Eq}, parse_expr() => expr, {Semi},
     }
 }
@@ -124,7 +124,7 @@ impl Parser {
 
     fn parse_atom(&mut self) -> Expr {
         use Expr::*;
-        let tk = self.peek().expect("Not a valid expression");
+        let tk = self.peek().expect("Incomplete expression");
         match tk.t_type {
             Int => {
                 let int = tk.val.clone().unwrap();
@@ -139,15 +139,16 @@ impl Parser {
             LPar => {
                 self.next();
                 let expr = self.parse_expr();
-                match self.peek().expect("Not a valid expression").t_type {
+                let tk = self.peek().expect("Incomplete expression");
+                match tk.t_type {
                     RPar => {
                         self.next();
                         return expr;
                     }
-                    _ => panic!("Missing ')'"),
+                    _ => Parser::error("Missing ')'", &tk),
                 }
             }
-            _ => panic!("Not a valid expression"),
+            _ => Parser::error("Invalid expression", &tk),
         }
     }
 
@@ -179,7 +180,8 @@ impl Parser {
 
     fn parse_stmt(&mut self) -> Stmt {
         use Stmt::*;
-        match self.peek().expect("Not a valid statement").t_type {
+        let tk = self.peek().expect("Incomplete statement");
+        match tk.t_type {
             Ret => return StmtRet(self.parse_ret()),
             Decl => return StmtDecl(self.parse_decl()),
             If => return StmtIf(self.parse_if()),
@@ -187,14 +189,14 @@ impl Parser {
                 self.next();
                 return StmtBlank;
             }
-            _ => panic!("Not a valid statement"),
+            _ => Parser::error("Unexpected {}", &tk),
         }
     }
 
     fn parse_mult(&mut self, tk: TokenType) -> Vec<Stmt> {
         let mut stmts = Vec::new();
         loop {
-            if self.peek().expect("Not a valid statement").t_type == tk {
+            if self.peek().expect(&format!("Expected {}", tk.val())).t_type == tk {
                 break;
             } else {
                 stmts.push(self.parse_stmt());
@@ -215,12 +217,11 @@ impl Parser {
         self.pos += 1;
     }
 
-    fn error(err: &str, token: &Token) {
+    fn error(err: &str, token: &Token) -> ! {
         panic!(
-            "{} at line {}: {}",
-            err,
+            "{} at line {}",
+            err.replace("{}", &format!("'{}'", &token.t_type.val())),
             token.line,
-            token.val.clone().unwrap()
         );
     }
 }
