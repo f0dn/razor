@@ -29,10 +29,16 @@ pub struct StmtRet {
     pub expr: Expr,
 }
 
+pub struct StmtAssign {
+    pub var: String,
+    pub expr: Expr,
+}
+
 pub enum Stmt {
     StmtRet(StmtRet),
     StmtDecl(StmtDecl),
     StmtIf(StmtIf),
+    StmtAssign(StmtAssign),
     StmtBlank,
 }
 
@@ -112,6 +118,12 @@ parse_fn! {
     }
 }
 
+parse_fn! {
+    parse_assign -> StmtAssign("Incomplete assignment") {
+        {Var} => var, {Eq}, parse_expr() => expr, {Semi},
+    }
+}
+
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Parser {
         return Parser {
@@ -185,6 +197,7 @@ impl Parser {
             Ret => return StmtRet(self.parse_ret()),
             Decl => return StmtDecl(self.parse_decl()),
             If => return StmtIf(self.parse_if()),
+            Var => return StmtAssign(self.parse_assign()),
             Semi => {
                 self.next();
                 return StmtBlank;

@@ -29,19 +29,13 @@ main:\n";
         match expr {
             ExprInt(int) => self.string.push_str(&format!("    mov rax, {}\n", int)),
             ExprId(expr_var) => {
-                let mut found = false;
-                for (var, loc) in self.vars.iter() {
-                    if var == &expr_var {
-                        self.string.push_str(&format!(
-                            "    mov rax, QWORD [rsp+{}]\n",
-                            self.stack_size - loc - 8
-                        ));
-                        found = true;
-                        break;
-                    }
-                }
-                if !found {
-                    panic!("Unknown identifier: {}", expr_var);
+                let var = self.declared(&expr_var);
+                match var {
+                    Some(loc) => self.string.push_str(&format!(
+                        "    mov rax, QWORD [rsp+{}]\n",
+                        self.stack_size - loc - 8
+                    )),
+                    None => panic!("Unknown identifier: {}", expr_var),
                 }
             }
             ExprBinOp(bin_op) => {
@@ -75,11 +69,25 @@ main:\n";
         self.num_ifs += 1;
     }
 
-    fn gen_decl(&mut self, stmt_decl: StmtDecl) {
-        for (var, _) in self.vars.iter() {
-            if var == &stmt_decl.var {
-                panic!("Identifier {} already used", stmt_decl.var);
+    fn gen_assign(&mut self, stmt_assign: StmtAssign) {
+        let var = self.declared(&stmt_assign.var);
+        match var {
+            Some(loc) => {
+                self.gen_expr(stmt_assign.expr);
+                self.string.push_str(&format!(
+                    "    mov QWORD [rsp+{}], rax\n",
+                    self.stack_size - loc - 8
+                ));
+                self.vars.insert(0, (stmt_assign.var, self.stack_size));
+                self.push("rax");
             }
+            None => panic!("Unknown identifier: {}", stmt_assign.var),
+        }
+    }
+
+    fn gen_decl(&mut self, stmt_decl: StmtDecl) {
+        if self.declared(&stmt_decl.var).is_some() {
+            panic!("Identifier {} already used", stmt_decl.var);
         }
         self.gen_expr(stmt_decl.expr);
         self.vars.push((stmt_decl.var, self.stack_size));
@@ -99,6 +107,7 @@ main:\n";
                 StmtRet(stmt_ret) => self.gen_ret(stmt_ret),
                 StmtDecl(stmt_decl) => self.gen_decl(stmt_decl),
                 StmtIf(stmt_if) => self.gen_if(stmt_if),
+                StmtAssign(stmt_assign) => self.gen_assign(stmt_assign),
                 StmtBlank => continue,
             }
         }
@@ -112,5 +121,14 @@ main:\n";
     fn pop(&mut self, reg: &str) {
         self.string.push_str(&format!("    pop {}\n", reg));
         self.stack_size -= 8;
+    }
+
+    fn declared(&self, var: &str) -> Option<usize> {
+        for (declared, loc) in self.vars.iter() {
+            if declared == var {
+                return Some(*loc);
+            }
+        }
+        return None;
     }
 }
