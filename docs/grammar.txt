@@ -2,11 +2,14 @@ PROGRAM       : STAT*
 
 STAT          : RETURN or
                 DECL or
-                IF
+                IF or
+                ASSIGN
 
 RETURN        : return EXPR;
 
 DECL          : decl id = EXPR;
+
+ASSIGN        : id = EXPR;
 
 EXPR          : BINOP or
                 int or
