@@ -4,7 +4,7 @@ pub struct Token {
     pub line: i32,
 }
 
-#[derive(PartialEq, Eq, Hash, Clone)]
+#[derive(PartialEq, Eq, Hash)]
 pub enum TokenType {
     // Keywords
     Ret,

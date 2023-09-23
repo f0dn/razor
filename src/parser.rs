@@ -48,7 +48,6 @@ pub struct Prog {
 
 pub struct Parser {
     tokens: Vec<Token>,
-    pos: i32,
     op: HashMap<TokenType, i8>,
     pub parse_tree: Prog,
 }
@@ -64,13 +63,13 @@ macro_rules! parse_fn {
                 $(
                     $(
                         $(let $tk_field;)?
-                        let tk = self.peek().expect($e_msg);
+                        self.peek().expect($e_msg);
+                        let tk = self.consume();
                         match &tk.t_type {
                             $tk => {
                                 $(
-                                    $tk_field = tk.val.clone().unwrap();
+                                    $tk_field = tk.val.unwrap();
                                 )?
-                                self.next();
                             }
                             _ => Parser::error("Unexpected {}", &tk),
                         }
@@ -125,10 +124,10 @@ parse_fn! {
 }
 
 impl Parser {
-    pub fn new(tokens: Vec<Token>) -> Parser {
+    pub fn new(mut tokens: Vec<Token>) -> Parser {
+        tokens.reverse();
         return Parser {
             tokens,
-            pos: 0,
             op: HashMap::from([(Star, 2), (Slash, 2), (Plus, 1), (Dash, 1)]),
             parse_tree: Prog { stmts: Vec::new() },
         };
@@ -136,27 +135,17 @@ impl Parser {
 
     fn parse_atom(&mut self) -> Expr {
         use Expr::*;
-        let tk = self.peek().expect("Incomplete expression");
+        self.peek().expect("Incomplete expression");
+        let tk = self.consume();
         match tk.t_type {
-            Int => {
-                let int = tk.val.clone().unwrap();
-                self.next();
-                return ExprInt(int);
-            }
-            Var => {
-                let var = tk.val.clone().unwrap();
-                self.next();
-                return ExprId(var);
-            }
+            Int => return ExprInt(tk.val.unwrap()),
+            Var => return ExprId(tk.val.unwrap()),
             LPar => {
-                self.next();
                 let expr = self.parse_expr();
-                let tk = self.peek().expect("Incomplete expression");
+                self.peek().expect("Incomplete expression");
+                let tk = self.consume();
                 match tk.t_type {
-                    RPar => {
-                        self.next();
-                        return expr;
-                    }
+                    RPar => return expr,
                     _ => Parser::error("Missing ')'", &tk),
                 }
             }
@@ -169,14 +158,17 @@ impl Parser {
 
         loop {
             let tk = self.peek().expect("Missing ';'");
-            let prec = self.op.get(&tk.t_type).copied();
-            if prec.is_none() || prec.unwrap() < min_prec {
+            let prec;
+            match self.op.get(&tk.t_type) {
+                Some(p) => prec = *p,
+                None => break,
+            }
+            if prec < min_prec {
                 break;
             }
 
-            let op = tk.t_type.clone();
-            self.next();
-            let rhs = self.parse_expr_prec(prec.unwrap() + 1);
+            let op = self.consume().t_type;
+            let rhs = self.parse_expr_prec(prec + 1);
             lhs = Expr::ExprBinOp(BinOp {
                 op,
                 lhs: Box::new(lhs),
@@ -199,7 +191,7 @@ impl Parser {
             If => return StmtIf(self.parse_if()),
             Var => return StmtAssign(self.parse_assign()),
             Semi => {
-                self.next();
+                self.consume();
                 return StmtBlank;
             }
             _ => Parser::error("Unexpected {}", &tk),
@@ -223,11 +215,11 @@ impl Parser {
     }
 
     fn peek(&self) -> Option<&Token> {
-        return self.tokens.get(self.pos as usize);
+        return self.tokens.last();
     }
 
-    fn next(&mut self) {
-        self.pos += 1;
+    fn consume(&mut self) -> Token {
+        return self.tokens.pop().unwrap();
     }
 
     fn error(err: &str, token: &Token) -> ! {
