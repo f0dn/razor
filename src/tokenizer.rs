@@ -1,7 +1,7 @@
 pub struct Token {
     pub t_type: TokenType,
     pub val: Option<String>,
-    pub line: i32,
+    pub line: u32,
 }
 
 #[derive(PartialEq, Eq, Hash)]
@@ -51,7 +51,7 @@ impl TokenType {
             LBr => "{",
             RBr => "}",
             Int => "int",
-            Var => "var",
+            Var => "variable",
             Eof => "EOF",
         }
     }
@@ -59,8 +59,8 @@ impl TokenType {
 
 pub struct Tokenizer {
     text: String,
-    pos: i32,
-    line: i32,
+    pos: u32,
+    line: u32,
     pub tokens: Vec<Token>,
 }
 

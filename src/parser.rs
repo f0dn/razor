@@ -1,7 +1,12 @@
 use std::collections::HashMap;
 
-use crate::tokenizer::*;
 use crate::tokenizer::TokenType::*;
+use crate::tokenizer::*;
+
+pub struct Variable {
+    pub name: String,
+    pub line: u32,
+}
 
 pub struct BinOp {
     pub op: TokenType,
@@ -11,7 +16,7 @@ pub struct BinOp {
 
 pub enum Expr {
     ExprInt(String),
-    ExprId(String),
+    ExprId(Variable),
     ExprBinOp(BinOp),
 }
 
@@ -21,7 +26,7 @@ pub struct StmtIf {
 }
 
 pub struct StmtDecl {
-    pub var: String,
+    pub var: Variable,
     pub expr: Expr,
 }
 
@@ -30,7 +35,7 @@ pub struct StmtRet {
 }
 
 pub struct StmtAssign {
-    pub var: String,
+    pub var: Variable,
     pub expr: Expr,
 }
 
@@ -53,9 +58,9 @@ pub struct Parser {
 }
 
 macro_rules! parse_fn {
-    ($name:ident -> $ret:ident($e_msg:literal) {
+    ($name:ident -> $ret:ident {
         $($({$tk:pat}$( => $tk_field:ident)?)?,
-          $($func:ident($($arg:expr)?) => $func_field:ident, )?
+          $($func:ident($($arg:expr)?) => $func_field:ident,)?
         )+}
     ) => {
         impl Parser {
@@ -63,7 +68,6 @@ macro_rules! parse_fn {
                 $(
                     $(
                         $(let $tk_field;)?
-                        self.peek().expect($e_msg);
                         let tk = self.consume();
                         match &tk.t_type {
                             $tk => {
@@ -98,7 +102,7 @@ macro_rules! parse_fn {
 }
 
 parse_fn! {
-    parse_if -> StmtIf("Incomplete if statement") {
+    parse_if -> StmtIf {
         {If}, parse_expr() => expr, {LBr},
             parse_mult(RBr) => stmts,
         {RBr},
@@ -106,20 +110,20 @@ parse_fn! {
 }
 
 parse_fn! {
-    parse_ret -> StmtRet("Incomplete return statement") {
+    parse_ret -> StmtRet {
         {Ret}, parse_expr() => expr, {Semi},
     }
 }
 
 parse_fn! {
-    parse_decl -> StmtDecl("Incomplete variable delcaration") {
-        {Decl}, {Var} => var, {Eq}, parse_expr() => expr, {Semi},
+    parse_decl -> StmtDecl {
+        {Decl}, parse_var() => var, {Eq}, parse_expr() => expr, {Semi},
     }
 }
 
 parse_fn! {
-    parse_assign -> StmtAssign("Incomplete assignment") {
-        {Var} => var, {Eq}, parse_expr() => expr, {Semi},
+    parse_assign -> StmtAssign {
+        , parse_var() => var, {Eq}, parse_expr() => expr, {Semi},
     }
 }
 
@@ -133,23 +137,40 @@ impl Parser {
         };
     }
 
+    fn parse_var(&mut self) -> Variable {
+        let tk = self.consume();
+        match tk.t_type {
+            Var => {
+                let name = tk.val.unwrap();
+                return Variable {
+                    name,
+                    line: tk.line,
+                };
+            }
+            _ => Parser::error("Unexpected {}", &tk),
+        }
+    }
+
     fn parse_atom(&mut self) -> Expr {
         use Expr::*;
-        self.peek().expect("Incomplete expression");
         let tk = self.consume();
         match tk.t_type {
             Int => return ExprInt(tk.val.unwrap()),
-            Var => return ExprId(tk.val.unwrap()),
+            Var => {
+                return ExprId(Variable {
+                    name: tk.val.unwrap(),
+                    line: tk.line,
+                })
+            }
             LPar => {
                 let expr = self.parse_expr();
-                self.peek().expect("Incomplete expression");
                 let tk = self.consume();
                 match tk.t_type {
                     RPar => return expr,
                     _ => Parser::error("Missing ')'", &tk),
                 }
             }
-            _ => Parser::error("Invalid expression", &tk),
+            _ => Parser::error("Unexpected {}", &tk),
         }
     }
 
@@ -157,7 +178,7 @@ impl Parser {
         let mut lhs = self.parse_atom();
 
         loop {
-            let tk = self.peek().expect("Missing ';'");
+            let tk = self.peek();
             let prec;
             match self.op.get(&tk.t_type) {
                 Some(p) => prec = *p,
@@ -184,7 +205,7 @@ impl Parser {
 
     fn parse_stmt(&mut self) -> Stmt {
         use Stmt::*;
-        let tk = self.peek().expect("Incomplete statement");
+        let tk = self.peek();
         match tk.t_type {
             Ret => return StmtRet(self.parse_ret()),
             Decl => return StmtDecl(self.parse_decl()),
@@ -201,7 +222,7 @@ impl Parser {
     fn parse_mult(&mut self, tk: TokenType) -> Vec<Stmt> {
         let mut stmts = Vec::new();
         loop {
-            if self.peek().expect(&format!("Expected {}", tk.val())).t_type == tk {
+            if self.peek().t_type == tk {
                 break;
             } else {
                 stmts.push(self.parse_stmt());
@@ -214,8 +235,8 @@ impl Parser {
         self.parse_tree.stmts = self.parse_mult(Eof);
     }
 
-    fn peek(&self) -> Option<&Token> {
-        return self.tokens.last();
+    fn peek(&self) -> &Token {
+        return self.tokens.last().unwrap();
     }
 
     fn consume(&mut self) -> Token {

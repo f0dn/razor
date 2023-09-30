@@ -9,14 +9,27 @@ pub struct Generator {
     num_jmps: usize,
 }
 
+macro_rules! push {
+    ($self:ident, $($($str:literal)? $(#$expr:expr)?),+) => {
+        $(
+            $(
+                $self.string.push_str($str);
+            )?
+            $(
+                $self.string.push_str($expr.to_string().as_str());
+            )?
+        )+
+        $self.string.push_str("\n");
+    };
+}
+
 impl Generator {
     pub fn new() -> Generator {
         let base = "\
-global main
-extern ExitProcess
+global _start
 
 section .text
-main:\n";
+_start:\n";
         return Generator {
             string: String::from(base),
             vars: Vec::new(),
@@ -27,95 +40,84 @@ main:\n";
     }
 
     fn gen_expr(&mut self, expr: Expr) {
-        self.string.push_str("; Expression Start\n");
+        push!(self, "; Expression Start");
         use Expr::*;
         match expr {
-            ExprInt(int) => self.string.push_str(&format!("    mov rax, {}\n", int)),
+            ExprInt(int) => {
+                push!(self, "    mov rax, ", #int);
+            }
             ExprId(expr_var) => {
-                let var = self.declared(&expr_var);
-                match var {
-                    Some(loc) => self.string.push_str(&format!(
-                        "    mov rax, QWORD [rsp+{}]\n",
-                        self.stack_size - loc - 8
-                    )),
-                    None => panic!("Unknown identifier: {}", expr_var),
-                }
+                let loc = *self.expr(&expr_var);
+                push!(self, "    mov rax, QWORD [rsp+", #self.stack_size - loc - 8, "]");
             }
             ExprBinOp(bin_op) => {
                 self.gen_expr(*bin_op.lhs);
                 self.push("rax");
                 self.gen_expr(*bin_op.rhs);
-                self.string.push_str("    mov rcx, rax\n");
+                push!(self, "    mov rcx, rax");
                 self.pop("rax");
                 match bin_op.op {
-                    Plus => self.string.push_str("    add rax, rcx\n"),
-                    Dash => self.string.push_str("    sub rax, rcx\n"),
-                    Star => self.string.push_str("    mul rcx\n"),
+                    Plus => {
+                        push!(self, "    add rax, rcx");
+                    }
+                    Dash => {
+                        push!(self, "    sub rax, rcx");
+                    }
+                    Star => {
+                        push!(self, "    mul rcx");
+                    }
                     Slash => {
-                        self.string.push_str("    mov edx, 0\n");
-                        self.string.push_str("    div rcx\n");
+                        push!(self, "    mov edx, 0");
+                        push!(self, "    div rcx");
                     }
                     _ => panic!("Unknown operator: {}", bin_op.op.val()),
                 }
             }
         }
-        self.string.push_str("; Expression End\n");
+        push!(self, "; Expression End");
     }
 
     fn gen_if(&mut self, stmt_if: StmtIf) {
-        self.string.push_str("; If Start\n");
+        push!(self, "; If Start");
         self.gen_expr(stmt_if.expr);
-        self.string.push_str("    test rax, rax\n");
-        self.string.push_str(&format!("    jz .if_{}\n", self.num_jmps));
+        push!(self, "    test rax, rax");
+        push!(self, "    jz .if_", #self.num_jmps);
         self.gen_scope(stmt_if.stmts);
-        self.string.push_str(&format!(".if_{}:\n", self.num_jmps));
+        push!(self, ".if_", #self.num_jmps, ":");
         self.num_jmps += 1;
-        self.string.push_str("; If End\n");
+        push!(self, "; If End");
     }
 
     fn gen_assign(&mut self, stmt_assign: StmtAssign) {
-        self.string.push_str("; Assign Start\n");
-        let var = self.declared(&stmt_assign.var);
-        match var {
-            Some(loc) => {
-                self.gen_expr(stmt_assign.expr);
-                self.string.push_str(&format!(
-                    "    mov rax, QWORD [rsp+{}]\n",
-                    self.stack_size - loc - 8
-                ));
-                for (declared, loc) in self.vars.iter_mut() {
-                    if declared == &stmt_assign.var {
-                        *loc = self.stack_size;
-                    }
-                }
-                self.push("rax");
-            }
-            None => panic!("Unknown identifier: {}", stmt_assign.var),
-        }
-        self.string.push_str("; Assign End\n");
+        push!(self, "; Assign Start");
+        let loc = *self.expr(&stmt_assign.var);
+        self.gen_expr(stmt_assign.expr);
+        push!(self, "    mov rax, QWORD [rsp+", #self.stack_size - loc - 8, "]");
+        *self.expr(&stmt_assign.var) = self.stack_size;
+        self.push("rax");
+        push!(self, "; Assign End");
     }
 
     fn gen_decl(&mut self, stmt_decl: StmtDecl) {
-        self.string.push_str("; Declaration Start\n");
-        if self.declared(&stmt_decl.var).is_some() {
-            panic!("Identifier {} already used", stmt_decl.var);
-        }
+        push!(self, "; Declaration Start");
+        self.decl(&stmt_decl.var);
         self.gen_expr(stmt_decl.expr);
-        self.vars.push((stmt_decl.var, self.stack_size));
+        self.vars.push((stmt_decl.var.name, self.stack_size));
         self.push("rax");
-        self.string.push_str("; Declaration End\n");
+        push!(self, "; Declaration End");
     }
 
     fn gen_ret(&mut self, stmt_ret: StmtRet) {
-        self.string.push_str("; Return Start\n");
+        push!(self, "; Return Start");
         self.gen_expr(stmt_ret.expr);
-        self.string.push_str("    mov rcx, rax\n");
-        self.string.push_str("    call ExitProcess\n");
-        self.string.push_str("; Return End\n");
+        push!(self, "    mov rdi, rax");
+        push!(self, "    mov rax, 60");
+        push!(self, "    syscall");
+        push!(self, "; Return End");
     }
 
     fn gen_scope(&mut self, stmts: Vec<Stmt>) {
-        self.string.push_str("; Scope Start\n");
+        push!(self, "; Scope Start");
         self.scopes.push(self.vars.len());
         use Stmt::*;
         for stmt in stmts {
@@ -128,12 +130,12 @@ main:\n";
             }
         }
         let scope_len = self.vars.len() - self.scopes.pop().unwrap();
-        self.string.push_str(&format!("    add rsp, {}\n", scope_len * 8));
+        push!(self, "    add rsp, ", #scope_len * 8);
         self.stack_size -= scope_len * 8;
         for _ in 0..scope_len {
             self.vars.pop();
         }
-        self.string.push_str("; Scope End\n");
+        push!(self, "; Scope End");
     }
 
     pub fn gen(&mut self, prog: Prog) {
@@ -141,21 +143,32 @@ main:\n";
     }
 
     fn push(&mut self, reg: &str) {
-        self.string.push_str(&format!("    push {}\n", reg));
+        push!(self, "    push ", #reg);
         self.stack_size += 8;
     }
 
     fn pop(&mut self, reg: &str) {
-        self.string.push_str(&format!("    pop {}\n", reg));
+        push!(self, "    pop ", #reg);
         self.stack_size -= 8;
     }
 
-    fn declared(&self, var: &str) -> Option<usize> {
-        for (declared, loc) in self.vars.iter() {
-            if declared == var {
-                return Some(*loc);
+    fn decl(&self, var: &Variable) {
+        for (declared, _) in self.vars.iter() {
+            if declared == &var.name {
+                panic!(
+                    "Identifier '{}' already declared at line {}",
+                    var.name, var.line
+                );
             }
         }
-        return None;
+    }
+
+    fn expr(&mut self, var: &Variable) -> &mut usize {
+        for (declared, loc) in self.vars.iter_mut() {
+            if declared == &var.name {
+                return loc;
+            }
+        }
+        panic!("Unknown identifier '{}' at line {}", var.name, var.line);
     }
 }
