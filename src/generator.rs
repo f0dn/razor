@@ -92,9 +92,7 @@ _start:\n";
         push!(self, "; Assign Start");
         let loc = *self.expr(&stmt_assign.var);
         self.gen_expr(stmt_assign.expr);
-        push!(self, "    mov rax, QWORD [rsp+", #self.stack_size - loc - 8, "]");
-        *self.expr(&stmt_assign.var) = self.stack_size;
-        self.push("rax");
+        push!(self, "    mov QWORD [rsp+", #self.stack_size - loc - 8, "], rax");
         push!(self, "; Assign End");
     }
 

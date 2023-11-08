@@ -3,7 +3,9 @@ PROGRAM       : STAT*
 STAT          : RETURN or
                 DECL or
                 IF or
-                ASSIGN
+                ASSIGN or
+                FUNC or
+                COMMENT
 
 RETURN        : return EXPR;
 
@@ -11,13 +13,22 @@ DECL          : decl id = EXPR;
 
 ASSIGN        : id = EXPR;
 
-EXPR          : BINOP or
+COMMENT       : // .*
+
+EXPR          : OP or
                 int or
                 id
 
-BINOP         : EXPR + EXPR or      prec = 1
-                EXPR - EXPR or      prec = 1
-                EXPR * EXPR or      prec = 2
-                EXPR / EXPR         prec = 2
+OP            : EXPR || EXPR or     prec = 0
+                EXPR == EXPR or     prec = 1
+                EXPR + EXPR or      prec = 2
+                EXPR - EXPR or      prec = 2
+                EXPR * EXPR or      prec = 3
+                EXPR / EXPR or      prec = 3
+                EXPR % EXPR or      prec = 3
+                ! EXPR              prec = 4
+                ( EXPR )            prec = 5
 
 IF            : if EXPR { STAT* }
+
+FUNC          : func id ( id* ) { STAT* }

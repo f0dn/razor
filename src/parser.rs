@@ -37,6 +37,13 @@ pub struct StmtRet {
 pub struct StmtAssign {
     pub var: Variable,
     pub expr: Expr,
+    pub assign: TokenType,
+}
+
+pub struct StmtFunc {
+    pub name: Variable,
+    pub arg: Variable,
+    pub stmts: Vec<Stmt>,
 }
 
 pub enum Stmt {
@@ -59,20 +66,20 @@ pub struct Parser {
 
 macro_rules! parse_fn {
     ($name:ident -> $ret:ident {
-        $($({$tk:pat}$( => $tk_field:ident)?)?,
+        $($({$($tk:pat_param)|+}$( => $tk_field:ident)?)?,
           $($func:ident($($arg:expr)?) => $func_field:ident,)?
         )+}
     ) => {
         impl Parser {
-            fn $name(&mut self) -> $ret {
+             fn $name(&mut self) -> $ret {
                 $(
                     $(
                         $(let $tk_field;)?
                         let tk = self.consume();
                         match &tk.t_type {
-                            $tk => {
+                            $($tk )|+ => {
                                 $(
-                                    $tk_field = tk.val.unwrap();
+                                    $tk_field = tk.t_type;
                                 )?
                             }
                             _ => Parser::error("Unexpected {}", &tk),
@@ -123,7 +130,15 @@ parse_fn! {
 
 parse_fn! {
     parse_assign -> StmtAssign {
-        , parse_var() => var, {Eq}, parse_expr() => expr, {Semi},
+        , parse_var() => var, {Eq | PEq} => assign, parse_expr() => expr, {Semi},
+    }
+}
+
+parse_fn! {
+    parse_func -> StmtFunc {
+        {Func}, parse_var() => name, {LPar}, parse_var() => arg, {RPar}, {LBr},
+            parse_mult(RBr) => stmts,
+        {RBr},
     }
 }
 
@@ -132,7 +147,16 @@ impl Parser {
         tokens.reverse();
         return Parser {
             tokens,
-            op: HashMap::from([(Star, 2), (Slash, 2), (Plus, 1), (Dash, 1)]),
+            op: HashMap::from([
+                (Ex, 4),
+                (Star, 3),
+                (Slash, 3),
+                (Per, 3),
+                (Plus, 2),
+                (Dash, 2),
+                (DEq, 1),
+                (DPipe, 0),
+            ]),
             parse_tree: Prog { stmts: Vec::new() },
         };
     }

@@ -10,14 +10,20 @@ pub enum TokenType {
     Ret,
     Decl,
     If,
+    Func,
 
     // Symbols
     Semi,
     Eq,
+    DEq,
+    PEq,
+    DPipe,
     Star,
     Plus,
     Dash,
     Slash,
+    Per,
+    Ex,
     LPar,
     RPar,
     LBr,
@@ -40,12 +46,18 @@ impl TokenType {
             Ret => "return",
             Decl => "decl",
             If => "if",
+            Func => "func",
             Semi => ";",
             Eq => "=",
+            DEq => "==",
+            PEq => "+=",
+            DPipe => "||",
             Star => "*",
             Plus => "+",
             Dash => "-",
             Slash => "/",
+            Per => "%",
+            Ex => "!",
             LPar => "(",
             RPar => ")",
             LBr => "{",
@@ -93,6 +105,7 @@ impl Tokenizer {
             "return" => self.push_sym(Ret),
             "decl" => self.push_sym(Decl),
             "if" => self.push_sym(If),
+            "func" => self.push_sym(Func),
             _ => self.tokens.push(Token {
                 t_type: Var,
                 val: Some(token),
@@ -129,11 +142,51 @@ impl Tokenizer {
             match self.peek() {
                 Some(ch) => match ch {
                     ';' => self.push_sym(Semi),
-                    '=' => self.push_sym(Eq),
+                    '=' => {
+                        self.next();
+                        match self.peek() {
+                            Some('=') => self.push_sym(DEq),
+                            _ => self.push_sym(Eq),
+                        }
+                    }
+                    '|' => {
+                        self.next();
+                        match self.peek() {
+                            Some('|') => self.push_sym(DPipe),
+                            _ => panic!("Unexpected '|' at line {}", self.line),
+                        }
+                    }
                     '*' => self.push_sym(Star),
-                    '+' => self.push_sym(Plus),
+                    '+' => {
+                        self.next();
+                        match self.peek() {
+                            Some('=') => self.push_sym(PEq),
+                            _ => self.push_sym(Plus),
+                        }
+                    }
                     '-' => self.push_sym(Dash),
-                    '/' => self.push_sym(Slash),
+                    '/' => {
+                        self.next();
+                        match self.peek() {
+                            Some('/') => loop {
+                                match self.peek() {
+                                    Some('\n') | Some('\r') => break,
+                                    Some(_) => self.next(),
+                                    None => break,
+                                }
+                            }
+                            _ => self.push_sym(Slash),
+                        }
+                    }
+                    '%' => self.push_sym(Per),
+                    '!' => {
+                        self.tokens.push(Token {
+                            t_type: Int,
+                            val: Some(String::from("0")),
+                            line: self.line,
+                        });
+                        self.push_sym(Ex);
+                    }
                     '(' => self.push_sym(LPar),
                     ')' => self.push_sym(RPar),
                     '{' => self.push_sym(LBr),
