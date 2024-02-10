@@ -28,5 +28,5 @@ fn main() {
     println!("Done generating code!");
 
     let mut out = File::create(out_path).expect("Can't create file");
-    out.write_all(generator.string.as_bytes()).expect("Can't write to file");
+    out.write_all(generator.text.as_bytes()).expect("Can't write to file");
 }

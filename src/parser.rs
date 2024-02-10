@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use crate::tokenizer::TokenType::*;
 use crate::tokenizer::*;
 
-pub struct Variable {
+pub struct Identifier {
     pub name: String,
-    pub line: u32,
+    pub line: usize,
 }
 
 pub struct BinOp {
@@ -14,9 +14,15 @@ pub struct BinOp {
     pub rhs: Box<Expr>,
 }
 
+pub struct ExprCall {
+    pub name: Identifier,
+    pub arg: Expr,
+}
+
 pub enum Expr {
     ExprInt(String),
-    ExprId(Variable),
+    ExprId(Identifier),
+    ExprCall(Box<ExprCall>),
     ExprBinOp(BinOp),
 }
 
@@ -26,7 +32,7 @@ pub struct StmtIf {
 }
 
 pub struct StmtDecl {
-    pub var: Variable,
+    pub var: Identifier,
     pub expr: Expr,
 }
 
@@ -34,23 +40,29 @@ pub struct StmtRet {
     pub expr: Expr,
 }
 
+pub struct StmtExit {
+    pub expr: Expr,
+}
+
 pub struct StmtAssign {
-    pub var: Variable,
+    pub var: Identifier,
     pub expr: Expr,
     pub assign: TokenType,
 }
 
 pub struct StmtFunc {
-    pub name: Variable,
-    pub arg: Variable,
+    pub ident: Identifier,
+    pub arg: Identifier,
     pub stmts: Vec<Stmt>,
 }
 
 pub enum Stmt {
     StmtRet(StmtRet),
+    StmtExit(StmtExit),
     StmtDecl(StmtDecl),
     StmtIf(StmtIf),
     StmtAssign(StmtAssign),
+    StmtFunc(StmtFunc),
     StmtBlank,
 }
 
@@ -123,22 +135,34 @@ parse_fn! {
 }
 
 parse_fn! {
+    parse_exit -> StmtExit {
+        {Exit}, parse_expr() => expr, {Semi},
+    }
+}
+
+parse_fn! {
     parse_decl -> StmtDecl {
-        {Decl}, parse_var() => var, {Eq}, parse_expr() => expr, {Semi},
+        {Decl}, parse_ident_name() => var, {Eq}, parse_expr() => expr, {Semi},
     }
 }
 
 parse_fn! {
     parse_assign -> StmtAssign {
-        , parse_var() => var, {Eq | PEq} => assign, parse_expr() => expr, {Semi},
+        , parse_ident_name() => var, {Eq | PEq} => assign, parse_expr() => expr, {Semi},
     }
 }
 
 parse_fn! {
     parse_func -> StmtFunc {
-        {Func}, parse_var() => name, {LPar}, parse_var() => arg, {RPar}, {LBr},
+        {Func}, parse_ident_name() => ident, {LPar}, parse_ident_name() => arg, {RPar}, {LBr},
             parse_mult(RBr) => stmts,
         {RBr},
+    }
+}
+
+parse_fn! {
+    parse_call -> ExprCall {
+        , parse_ident_name() => name, {LPar}, parse_expr() => arg, {RPar},
     }
 }
 
@@ -161,12 +185,12 @@ impl Parser {
         };
     }
 
-    fn parse_var(&mut self) -> Variable {
+    fn parse_ident_name(&mut self) -> Identifier {
         let tk = self.consume();
         match tk.t_type {
             Var => {
                 let name = tk.val.unwrap();
-                return Variable {
+                return Identifier {
                     name,
                     line: tk.line,
                 };
@@ -181,7 +205,11 @@ impl Parser {
         match tk.t_type {
             Int => return ExprInt(tk.val.unwrap()),
             Var => {
-                return ExprId(Variable {
+                if self.peek().t_type == LPar {
+                    self.tokens.push(tk);
+                    return ExprCall(Box::new(self.parse_call()));
+                }
+                return ExprId(Identifier {
                     name: tk.val.unwrap(),
                     line: tk.line,
                 })
@@ -208,6 +236,7 @@ impl Parser {
                 Some(p) => prec = *p,
                 None => break,
             }
+
             if prec < min_prec {
                 break;
             }
@@ -224,7 +253,7 @@ impl Parser {
     }
 
     fn parse_expr(&mut self) -> Expr {
-        return self.parse_expr_prec(1);
+        return self.parse_expr_prec(0);
     }
 
     fn parse_stmt(&mut self) -> Stmt {
@@ -232,9 +261,11 @@ impl Parser {
         let tk = self.peek();
         match tk.t_type {
             Ret => return StmtRet(self.parse_ret()),
+            Exit => return StmtExit(self.parse_exit()),
             Decl => return StmtDecl(self.parse_decl()),
             If => return StmtIf(self.parse_if()),
             Var => return StmtAssign(self.parse_assign()),
+            Func => return StmtFunc(self.parse_func()),
             Semi => {
                 self.consume();
                 return StmtBlank;

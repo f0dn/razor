@@ -1,13 +1,14 @@
 pub struct Token {
     pub t_type: TokenType,
     pub val: Option<String>,
-    pub line: u32,
+    pub line: usize,
 }
 
 #[derive(PartialEq, Eq, Hash)]
 pub enum TokenType {
     // Keywords
     Ret,
+    Exit,
     Decl,
     If,
     Func,
@@ -44,6 +45,7 @@ impl TokenType {
         use TokenType::*;
         match self {
             Ret => "return",
+            Exit => "exit",
             Decl => "decl",
             If => "if",
             Func => "func",
@@ -72,7 +74,7 @@ impl TokenType {
 pub struct Tokenizer {
     text: String,
     pos: u32,
-    line: u32,
+    line: usize,
     pub tokens: Vec<Token>,
 }
 
@@ -103,6 +105,7 @@ impl Tokenizer {
         }
         match token.as_str() {
             "return" => self.push_sym(Ret),
+            "exit" => self.push_sym(Exit),
             "decl" => self.push_sym(Decl),
             "if" => self.push_sym(If),
             "func" => self.push_sym(Func),
