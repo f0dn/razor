@@ -190,17 +190,7 @@ _start:\n";
 
     fn gen_ret(&mut self, stmt_ret: StmtRet) -> String {
         let expr = self.gen_expr(stmt_ret.expr);
-        let mut name = &String::new();
-        for i in 0..self.stack.len() {
-            match &self.stack[i] {
-                Some(id) => {
-                    if id.t == Type::Func {
-                        name = &id.name;
-                    }
-                }
-                None => continue,
-            }
-        }
+        let name = &self.stack[self.get_func()].as_ref().unwrap().name;
         return format!(
             "; Return Start
 {expr}
@@ -299,8 +289,23 @@ _start:\n";
         return format!("    pop {}", reg);
     }
 
+    fn get_func(&self) -> usize {
+        for i in (0..self.stack.len()).rev() {
+            match &self.stack[i] {
+                Some(id) => {
+                    if id.t == Type::Func {
+                        return i;
+                    }
+                }
+                None => continue,
+            }
+        }
+        return 0;
+    }
+
     fn get_loc(&self, ident: &String, t: Type) -> Option<usize> {
-        for i in 0..self.stack.len() {
+        let func = self.get_func();
+        for i in func..self.stack.len() {
             match &self.stack[i] {
                 Some(id) => {
                     if &id.name == ident && &id.t == &t {
