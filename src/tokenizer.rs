@@ -19,6 +19,7 @@ pub enum TokenType {
     DEq,
     PEq,
     DPipe,
+    DAmp,
     Star,
     Plus,
     Dash,
@@ -54,6 +55,7 @@ impl TokenType {
             DEq => "==",
             PEq => "+=",
             DPipe => "||",
+            DAmp => "&&",
             Star => "*",
             Plus => "+",
             Dash => "-",
@@ -157,6 +159,13 @@ impl Tokenizer {
                         match self.peek() {
                             Some('|') => self.push_sym(DPipe),
                             _ => panic!("Unexpected '|' at line {}", self.line),
+                        }
+                    }
+                    '&' => {
+                        self.next();
+                        match self.peek() {
+                            Some('&') => self.push_sym(DAmp),
+                            _ => panic!("Unexpected '&' at line {}", self.line),
                         }
                     }
                     '*' => self.push_sym(Star),

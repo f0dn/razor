@@ -179,6 +179,7 @@ impl Parser {
                 (Plus, 2),
                 (Dash, 2),
                 (DEq, 1),
+                (DAmp, 0),
                 (DPipe, 0),
             ]),
             parse_tree: Prog { stmts: Vec::new() },

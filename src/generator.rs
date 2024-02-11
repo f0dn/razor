@@ -1,13 +1,22 @@
 use crate::parser::*;
 use crate::tokenizer::TokenType::*;
 
+#[derive(PartialEq)]
+enum Type {
+    Var,
+    Func,
+}
+
+struct Ident {
+    name: String,
+    t: Type,
+}
+
 pub struct Generator {
     pub text: String,
     functions: String,
-    vars: Vec<Identifier>,
-    funcs: Vec<Identifier>,
+    stack: Vec<Option<Ident>>,
     scopes: Vec<usize>,
-    stack_size: usize,
     num_jmps: usize,
 }
 
@@ -21,10 +30,8 @@ _start:\n";
         return Generator {
             text: String::from(base),
             functions: String::new(),
-            vars: Vec::new(),
-            funcs: Vec::new(),
+            stack: Vec::new(),
             scopes: Vec::new(),
-            stack_size: 0,
             num_jmps: 0,
         };
     }
@@ -34,18 +41,27 @@ _start:\n";
         let expr_string = match expr {
             ExprInt(int) => format!("    mov rax, {int}"),
             ExprId(expr_var) => {
-                let loc = *Generator::expr(&mut self.vars, &expr_var);
-                format!(
-                    "    mov rax, QWORD [rsp+{offset}]",
-                    offset = self.stack_size - loc - 8
-                )
+                let loc = self.get_loc(&expr_var.name, Type::Var);
+                match loc {
+                    Some(loc) => format!(
+                        "    mov rax, QWORD [rsp+{offset}]",
+                        offset = self.stack.len() * 8 - loc - 8
+                    ),
+                    None => panic!(
+                        "Unknown identifier '{}' at line {}",
+                        expr_var.name, expr_var.line
+                    ),
+                }
             }
             ExprBinOp(bin_op) => {
                 let op = match bin_op.op {
                     Plus => "    add rax, rcx",
                     Dash => "    sub rax, rcx",
                     Star => "    mul rcx",
-                    Slash => "    mov edx, 0\n    div rcx",
+                    Slash => {
+                        "    mov edx, 0
+    div rcx"
+                    }
                     Per => {
                         "    mov edx, 0
     div rcx
@@ -62,6 +78,15 @@ _start:\n";
     cmp rcx, 0
     setz ah
     and al, ah
+    xor al, 0b00000001
+    movzx rax, al"
+                    }
+                    DAmp => {
+                        "    cmp rax, 0
+    setz al
+    cmp rcx, 0
+    setz ah
+    or al, ah
     xor al, 0b00000001
     movzx rax, al"
                     }
@@ -92,7 +117,6 @@ _start:\n";
                     call = self.gen_expr(expr_call.arg),
                     name = expr_call.name.name
                 );
-                self.stack_size += 8;
                 call_string
             }
         };
@@ -122,44 +146,66 @@ _start:\n";
     }
 
     fn gen_assign(&mut self, stmt_assign: StmtAssign) -> String {
-        let loc = *Generator::expr(&mut self.vars, &stmt_assign.var);
-        return format!(
-            "; Assign Start
+        let loc = self.get_loc(&stmt_assign.var.name, Type::Var);
+        match loc {
+            Some(loc) => {
+                return format!(
+                    "; Assign Start
 {expr}
     mov QWORD [rsp+{offset}], rax
 ; Assign End",
-            expr = self.gen_expr(stmt_assign.expr),
-            offset = self.stack_size - loc - 8
-        );
+                    expr = self.gen_expr(stmt_assign.expr),
+                    offset = self.stack.len() * 8 - loc - 8
+                );
+            }
+            None => panic!(
+                "Unknown identifier '{}' at line {}",
+                stmt_assign.var.name, stmt_assign.var.line
+            ),
+        }
     }
 
     fn gen_decl(&mut self, stmt_decl: StmtDecl) -> String {
-        self.decl(&self.vars, &stmt_decl.var);
+        if self.get_loc(&stmt_decl.var.name, Type::Var).is_some() {
+            panic!(
+                "Variable '{}' redeclared at line {}",
+                stmt_decl.var.name, stmt_decl.var.line
+            );
+        }
         let begin_string = format!(
             "; Declaration Start
 {expr}",
             expr = self.gen_expr(stmt_decl.expr)
         );
-        self.vars.push(Identifier {
+        self.stack.push(Some(Ident {
             name: stmt_decl.var.name,
-            line: self.stack_size,
-        });
+            t: Type::Var,
+        }));
         return format!(
             "{begin_string}
-{push}
+    push rax
 ; Declaration End",
-            push = self.push("rax")
         );
     }
 
     fn gen_ret(&mut self, stmt_ret: StmtRet) -> String {
+        let expr = self.gen_expr(stmt_ret.expr);
+        let mut name = &String::new();
+        for i in 0..self.stack.len() {
+            match &self.stack[i] {
+                Some(id) => {
+                    if id.t == Type::Func {
+                        name = &id.name;
+                    }
+                }
+                None => continue,
+            }
+        }
         return format!(
             "; Return Start
 {expr}
     jmp .return_{name}
 ; Return End",
-            expr = self.gen_expr(stmt_ret.expr),
-            name = self.funcs.last().unwrap().name
         );
     }
 
@@ -181,36 +227,34 @@ _start:\n";
 {name}:",
             name = stmt_func.ident.name
         );
-        self.vars.push(Identifier {
+        self.stack.push(Some(Ident {
+            name: stmt_func.ident.name,
+            t: Type::Func,
+        }));
+        self.stack.push(Some(Ident {
             name: stmt_func.arg.name,
-            line: self.stack_size,
-        });
-        self.funcs.push(Identifier {
-            name: stmt_func.ident.name.clone(),
-            line: self.text.len(),
-        });
-        let end_string = format!(
+            t: Type::Var,
+        }));
+        let scope = self.gen_scope(stmt_func.stmts);
+        self.stack.pop();
+        let name = self.stack.pop().unwrap().unwrap().name;
+        return format!(
             "{begin_string}
-{push}
+    push rax
 {scope}
 .return_{name}:
     add rsp, 8
     ret
-; Function End",
-            push = self.push("rax"),
-            scope = self.gen_scope(stmt_func.stmts),
-            name = stmt_func.ident.name
+; Function End"
         );
-        self.vars.pop();
-        self.stack_size -= 16;
-        return end_string;
     }
 
     fn gen_scope(&mut self, stmts: Vec<Stmt>) -> String {
-        self.scopes.push(self.vars.len());
+        self.scopes.push(self.stack.len());
         use Stmt::*;
         let mut stmt_string = String::new();
         for stmt in stmts {
+            stmt_string.push('\n');
             stmt_string.push_str(&match stmt {
                 StmtRet(stmt_ret) => self.gen_ret(stmt_ret),
                 StmtExit(stmt_exit) => self.gen_exit(stmt_exit),
@@ -225,10 +269,9 @@ _start:\n";
                 StmtBlank => continue,
             });
         }
-        let scope_len = self.vars.len() - self.scopes.pop().unwrap();
-        self.stack_size -= scope_len * 8;
+        let scope_len = self.stack.len() - self.scopes.pop().unwrap();
         for _ in 0..scope_len {
-            self.vars.pop();
+            self.stack.pop();
         }
         return format!(
             "; Scope Start
@@ -242,36 +285,31 @@ _start:\n";
     pub fn gen(&mut self, prog: Prog) {
         let scope = self.gen_scope(prog.stmts);
         self.text.push_str(&scope);
+        self.text.push('\n');
         self.text.push_str(&self.functions);
     }
 
     fn push(&mut self, reg: &str) -> String {
-        self.stack_size += 8;
+        self.stack.push(None);
         return format!("    push {}", reg);
     }
 
     fn pop(&mut self, reg: &str) -> String {
-        self.stack_size -= 8;
+        self.stack.pop();
         return format!("    pop {}", reg);
     }
 
-    fn decl(&self, idents: &Vec<Identifier>, ident: &Identifier) {
-        for declared in idents {
-            if &declared.name == &ident.name {
-                panic!(
-                    "Identifier '{}' already declared at line {}",
-                    ident.name, ident.line
-                );
+    fn get_loc(&self, ident: &String, t: Type) -> Option<usize> {
+        for i in 0..self.stack.len() {
+            match &self.stack[i] {
+                Some(id) => {
+                    if &id.name == ident && &id.t == &t {
+                        return Some(i * 8);
+                    }
+                }
+                None => continue,
             }
         }
-    }
-
-    fn expr<'a>(idents: &'a mut Vec<Identifier>, ident: &Identifier) -> &'a mut usize {
-        for declared in idents.iter_mut() {
-            if &declared.name == &ident.name {
-                return &mut declared.line;
-            }
-        }
-        panic!("Unknown identifier '{}' at line {}", ident.name, ident.line);
+        return None;
     }
 }
