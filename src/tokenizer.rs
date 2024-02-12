@@ -12,12 +12,12 @@ pub enum TokenType {
     Decl,
     If,
     Func,
+    For,
 
     // Symbols
     Semi,
     Eq,
     DEq,
-    PEq,
     DPipe,
     DAmp,
     Star,
@@ -50,10 +50,10 @@ impl TokenType {
             Decl => "decl",
             If => "if",
             Func => "func",
+            For => "for",
             Semi => ";",
             Eq => "=",
             DEq => "==",
-            PEq => "+=",
             DPipe => "||",
             DAmp => "&&",
             Star => "*",
@@ -111,6 +111,7 @@ impl Tokenizer {
             "decl" => self.push_sym(Decl),
             "if" => self.push_sym(If),
             "func" => self.push_sym(Func),
+            "for" => self.push_sym(For),
             _ => self.tokens.push(Token {
                 t_type: Var,
                 val: Some(token),
@@ -169,13 +170,7 @@ impl Tokenizer {
                         }
                     }
                     '*' => self.push_sym(Star),
-                    '+' => {
-                        self.next();
-                        match self.peek() {
-                            Some('=') => self.push_sym(PEq),
-                            _ => self.push_sym(Plus),
-                        }
-                    }
+                    '+' => self.push_sym(Plus),
                     '-' => self.push_sym(Dash),
                     '/' => {
                         self.next();

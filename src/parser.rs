@@ -56,6 +56,13 @@ pub struct StmtFunc {
     pub stmts: Vec<Stmt>,
 }
 
+pub struct StmtFor {
+    pub init: StmtDecl,
+    pub cond: Expr,
+    pub iter: StmtAssign,
+    pub stmts: Vec<Stmt>,
+}
+
 pub enum Stmt {
     StmtRet(StmtRet),
     StmtExit(StmtExit),
@@ -63,6 +70,7 @@ pub enum Stmt {
     StmtIf(StmtIf),
     StmtAssign(StmtAssign),
     StmtFunc(StmtFunc),
+    StmtFor(StmtFor),
     StmtBlank,
 }
 
@@ -148,7 +156,7 @@ parse_fn! {
 
 parse_fn! {
     parse_assign -> StmtAssign {
-        , parse_ident_name() => var, {Eq | PEq} => assign, parse_expr() => expr, {Semi},
+        , parse_ident_name() => var, {Eq} => assign, parse_expr() => expr, {Semi},
     }
 }
 
@@ -163,6 +171,14 @@ parse_fn! {
 parse_fn! {
     parse_call -> ExprCall {
         , parse_ident_name() => name, {LPar}, parse_expr() => arg, {RPar},
+    }
+}
+
+parse_fn! {
+    parse_for -> StmtFor {
+        {For}, parse_decl() => init, , parse_expr() => cond, {Semi}, parse_assign() => iter, {LBr},
+            parse_mult(RBr) => stmts,
+        {RBr},
     }
 }
 
@@ -267,6 +283,7 @@ impl Parser {
             If => return StmtIf(self.parse_if()),
             Var => return StmtAssign(self.parse_assign()),
             Func => return StmtFunc(self.parse_func()),
+            For => return StmtFor(self.parse_for()),
             Semi => {
                 self.consume();
                 return StmtBlank;

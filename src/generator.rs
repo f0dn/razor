@@ -239,6 +239,31 @@ _start:\n";
         );
     }
 
+    fn gen_for(&mut self, stmt_for: StmtFor) -> String {
+        let num_jmps = self.num_jmps;
+        let begin_string = format!(
+            "; For Start
+{init}
+.for_{start_num}:
+{expr}
+    test rax, rax
+    jz .for_{end_num}
+{scope}
+{iter}
+    jmp .for_{start_num}
+.for_{end_num}:
+; For End",
+            init = self.gen_decl(stmt_for.init),
+            expr = self.gen_expr(stmt_for.cond),
+            start_num = num_jmps,
+            scope = self.gen_scope(stmt_for.stmts),
+            iter = self.gen_assign(stmt_for.iter),
+            end_num = num_jmps + 1
+        );
+        self.num_jmps += 2;
+        return begin_string;
+    }
+
     fn gen_scope(&mut self, stmts: Vec<Stmt>) -> String {
         self.scopes.push(self.stack.len());
         use Stmt::*;
@@ -256,6 +281,7 @@ _start:\n";
                     self.functions.push_str(&func);
                     String::new()
                 }
+                StmtFor(stmt_for) => self.gen_for(stmt_for),
                 StmtBlank => continue,
             });
         }

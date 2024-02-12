@@ -6,6 +6,7 @@ STAT          : RETURN or
                 ASSIGN or
                 FUNC or
                 COMMENT
+                FOR
 
 RETURN        : return EXPR;
 
@@ -14,6 +15,8 @@ DECL          : decl id = EXPR;
 ASSIGN        : id = EXPR;
 
 COMMENT       : // .*
+
+FOR           : for DECL EXPR; ASSIGN { STAT* }
 
 EXPR          : OP or
                 int or
