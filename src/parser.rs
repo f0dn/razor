@@ -63,6 +63,10 @@ pub struct StmtFor {
     pub stmts: Vec<Stmt>,
 }
 
+pub struct StmtAsm {
+    pub code: String,
+}
+
 pub enum Stmt {
     StmtRet(StmtRet),
     StmtExit(StmtExit),
@@ -71,6 +75,7 @@ pub enum Stmt {
     StmtAssign(StmtAssign),
     StmtFunc(StmtFunc),
     StmtFor(StmtFor),
+    StmtAsm(StmtAsm),
     StmtBlank,
 }
 
@@ -216,6 +221,18 @@ impl Parser {
         }
     }
 
+    fn parse_asm(&mut self) -> StmtAsm {
+        let tk = self.consume();
+        match tk.t_type {
+            Asm => {
+                return StmtAsm {
+                    code: tk.val.unwrap(),
+                };
+            }
+            _ => Parser::error("Unexpected {}", &tk),
+        }
+    }
+
     fn parse_atom(&mut self) -> Expr {
         use Expr::*;
         let tk = self.consume();
@@ -229,7 +246,7 @@ impl Parser {
                 return ExprId(Identifier {
                     name: tk.val.unwrap(),
                     line: tk.line,
-                })
+                });
             }
             LPar => {
                 let expr = self.parse_expr();
@@ -284,6 +301,7 @@ impl Parser {
             Var => return StmtAssign(self.parse_assign()),
             Func => return StmtFunc(self.parse_func()),
             For => return StmtFor(self.parse_for()),
+            Asm => return StmtAsm(self.parse_asm()),
             Semi => {
                 self.consume();
                 return StmtBlank;

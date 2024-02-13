@@ -33,6 +33,7 @@ pub enum TokenType {
 
     // Literals
     Int,
+    Asm,
 
     // Identifiers
     Var,
@@ -67,6 +68,7 @@ impl TokenType {
             LBr => "{",
             RBr => "}",
             Int => "int",
+            Asm => "asm",
             Var => "variable",
             Eof => "EOF",
         }
@@ -202,6 +204,28 @@ impl Tokenizer {
                     '\n' | '\r' => {
                         self.next();
                         self.line += 1;
+                    }
+                    '`' => {
+                        self.next();
+                        let mut asm = String::new();
+                        loop {
+                            match self.peek() {
+                                Some('`') => {
+                                    self.next();
+                                    break;
+                                }
+                                Some(ch) => {
+                                    asm.push(ch);
+                                    self.next();
+                                }
+                                None => panic!("Unexpected EOF at line {}", self.line),
+                            }
+                        }
+                        self.tokens.push(Token {
+                            t_type: Asm,
+                            val: Some(asm),
+                            line: self.line,
+                        });
                     }
                     'a'..='z' | 'A'..='Z' => self.tokenize_word(),
                     '0'..='9' => self.tokenize_num(),

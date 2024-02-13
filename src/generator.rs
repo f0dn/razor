@@ -282,6 +282,7 @@ _start:\n";
                     String::new()
                 }
                 StmtFor(stmt_for) => self.gen_for(stmt_for),
+                StmtAsm(stmt_asm) => stmt_asm.code,
                 StmtBlank => continue,
             });
         }
