@@ -283,6 +283,7 @@ _start:\n";
                 }
                 StmtFor(stmt_for) => self.gen_for(stmt_for),
                 StmtAsm(stmt_asm) => stmt_asm.code,
+                StmtExpr(stmt_expr) => self.gen_expr(stmt_expr),
                 StmtBlank => continue,
             });
         }

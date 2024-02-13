@@ -76,6 +76,7 @@ pub enum Stmt {
     StmtFunc(StmtFunc),
     StmtFor(StmtFor),
     StmtAsm(StmtAsm),
+    StmtExpr(Expr),
     StmtBlank,
 }
 
@@ -298,7 +299,12 @@ impl Parser {
             Exit => return StmtExit(self.parse_exit()),
             Decl => return StmtDecl(self.parse_decl()),
             If => return StmtIf(self.parse_if()),
-            Var => return StmtAssign(self.parse_assign()),
+            Var => {
+                if self.peek_mult(2).t_type == Eq {
+                    return StmtAssign(self.parse_assign());
+                }
+                return StmtExpr(self.parse_expr());
+            },
             Func => return StmtFunc(self.parse_func()),
             For => return StmtFor(self.parse_for()),
             Asm => return StmtAsm(self.parse_asm()),
@@ -306,7 +312,7 @@ impl Parser {
                 self.consume();
                 return StmtBlank;
             }
-            _ => Parser::error("Unexpected {}", &tk),
+            _ => return StmtExpr(self.parse_expr()),
         }
     }
 
@@ -328,6 +334,10 @@ impl Parser {
 
     fn peek(&self) -> &Token {
         return self.tokens.last().unwrap();
+    }
+
+    fn peek_mult(&self, n: usize) -> &Token {
+        return self.tokens.get(self.tokens.len() - n).unwrap();
     }
 
     fn consume(&mut self) -> Token {
