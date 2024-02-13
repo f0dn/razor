@@ -215,6 +215,9 @@ impl Tokenizer {
                                     break;
                                 }
                                 Some(ch) => {
+                                    if ch == '\n' || ch == '\r' {
+                                        self.line += 1;
+                                    }
                                     asm.push(ch);
                                     self.next();
                                 }

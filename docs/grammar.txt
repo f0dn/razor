@@ -5,8 +5,8 @@ STAT          : RETURN or
                 IF or
                 ASSIGN or
                 FUNC or
-                COMMENT
-                FOR
+                COMMENT or
+                FOR or
                 ASM
 
 RETURN        : return EXPR;
