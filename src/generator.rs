@@ -43,10 +43,19 @@ _start:\n";
             ExprId(expr_var) => {
                 let loc = self.get_loc(&expr_var.name, Type::Var);
                 match loc {
-                    Some(loc) => format!(
-                        "    mov rax, QWORD [rsp+{offset}]",
-                        offset = self.stack.len() * 8 - loc - 8
-                    ),
+                    Some(loc) => {
+                        if expr_var.is_ref {
+                            format!(
+                                "    lea rax, [rsp+{offset}]",
+                                offset = self.stack.len() * 8 - loc - 8
+                            )
+                        } else {
+                            format!(
+                                "    mov rax, QWORD [rsp+{offset}]",
+                                offset = self.stack.len() * 8 - loc - 8
+                            )
+                        }
+                    }
                     None => panic!(
                         "Unknown identifier '{}' at line {}",
                         expr_var.name, expr_var.line
@@ -95,6 +104,7 @@ _start:\n";
     setz al
     movzx rax, al"
                     }
+                    At => "    mov rax, [rcx]",
                     _ => panic!("Unknown operator: {}", bin_op.op.val()),
                 };
                 format!(
@@ -111,13 +121,12 @@ _start:\n";
                 )
             }
             ExprCall(expr_call) => {
-                let call_string = format!(
+                format!(
                     "{call}
     call {name}",
                     call = self.gen_expr(expr_call.arg),
                     name = expr_call.name.name
-                );
-                call_string
+                )
             }
         };
         return format!(
@@ -161,6 +170,27 @@ _start:\n";
             None => panic!(
                 "Unknown identifier '{}' at line {}",
                 stmt_assign.var.name, stmt_assign.var.line
+            ),
+        }
+    }
+
+    fn gen_assign_at(&mut self, stmt_assign_at: StmtAssignAt) -> String {
+        let loc = self.get_loc(&stmt_assign_at.var.name, Type::Var);
+        match loc {
+            Some(loc) => {
+                return format!(
+                    "; Assign At Start
+{expr}
+    mov rcx, QWORD [rsp+{offset}]
+    mov [rcx], rax
+; Assign At End",
+                    expr = self.gen_expr(stmt_assign_at.expr),
+                    offset = self.stack.len() * 8 - loc - 8
+                );
+            }
+            None => panic!(
+                "Unknown identifier '{}' at line {}",
+                stmt_assign_at.var.name, stmt_assign_at.var.line
             ),
         }
     }
@@ -283,7 +313,8 @@ _start:\n";
                 }
                 StmtFor(stmt_for) => self.gen_for(stmt_for),
                 StmtAsm(stmt_asm) => stmt_asm.code,
-                StmtExpr(stmt_expr) => self.gen_expr(stmt_expr),
+                StmtExpr(stmt_expr) => self.gen_expr(stmt_expr.expr),
+                StmtAssignAt(stmt_assign_at) => self.gen_assign_at(stmt_assign_at),
                 StmtBlank => continue,
             });
         }

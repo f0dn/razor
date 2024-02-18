@@ -8,23 +8,26 @@ STAT          : RETURN or
                 COMMENT or
                 FOR or
                 ASM or
-                EXPR
+                EXPR;
 
 RETURN        : return EXPR;
 
 DECL          : decl id = EXPR;
 
-ASSIGN        : id = EXPR;
+ASSIGN        : [@] id = EXPR;
 
 COMMENT       : // .*
 
 FOR           : for DECL EXPR; ASSIGN { STAT* }
 
+CALL          : id ( EXPR )
+
 ASM           : `.*`
 
 EXPR          : OP or
+                CALL or
                 int or
-                id
+                [&] id
 
 OP            : EXPR || EXPR or     prec = 0
                 EXPR && EXPR or     prec = 0
@@ -34,9 +37,10 @@ OP            : EXPR || EXPR or     prec = 0
                 EXPR * EXPR or      prec = 3
                 EXPR / EXPR or      prec = 3
                 EXPR % EXPR or      prec = 3
+                @ EXPR              prec = 4
                 ! EXPR              prec = 4
                 ( EXPR )            prec = 5
 
 IF            : if EXPR { STAT* }
 
-FUNC          : func id ( id* ) { STAT* }
+FUNC          : func id ( id ) { STAT* }

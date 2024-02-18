@@ -6,6 +6,7 @@ use crate::tokenizer::*;
 pub struct Identifier {
     pub name: String,
     pub line: usize,
+    pub is_ref: bool,
 }
 
 pub struct BinOp {
@@ -50,6 +51,12 @@ pub struct StmtAssign {
     pub assign: TokenType,
 }
 
+pub struct StmtAssignAt {
+    pub var: Identifier,
+    pub expr: Expr,
+    pub assign: TokenType,
+}
+
 pub struct StmtFunc {
     pub ident: Identifier,
     pub arg: Identifier,
@@ -67,16 +74,21 @@ pub struct StmtAsm {
     pub code: String,
 }
 
+pub struct StmtExpr {
+    pub expr: Expr,
+}
+
 pub enum Stmt {
     StmtRet(StmtRet),
     StmtExit(StmtExit),
     StmtDecl(StmtDecl),
     StmtIf(StmtIf),
     StmtAssign(StmtAssign),
+    StmtAssignAt(StmtAssignAt),
     StmtFunc(StmtFunc),
     StmtFor(StmtFor),
     StmtAsm(StmtAsm),
-    StmtExpr(Expr),
+    StmtExpr(StmtExpr),
     StmtBlank,
 }
 
@@ -167,6 +179,12 @@ parse_fn! {
 }
 
 parse_fn! {
+    parse_assign_at -> StmtAssignAt {
+        {At}, parse_ident_name() => var, {Eq} => assign, parse_expr() => expr, {Semi},
+    }
+}
+
+parse_fn! {
     parse_func -> StmtFunc {
         {Func}, parse_ident_name() => ident, {LPar}, parse_ident_name() => arg, {RPar}, {LBr},
             parse_mult(RBr) => stmts,
@@ -195,6 +213,7 @@ impl Parser {
             tokens,
             op: HashMap::from([
                 (Ex, 4),
+                (At, 4),
                 (Star, 3),
                 (Slash, 3),
                 (Per, 3),
@@ -216,6 +235,7 @@ impl Parser {
                 return Identifier {
                     name,
                     line: tk.line,
+                    is_ref: false,
                 };
             }
             _ => Parser::error("Unexpected {}", &tk),
@@ -247,6 +267,7 @@ impl Parser {
                 return ExprId(Identifier {
                     name: tk.val.unwrap(),
                     line: tk.line,
+                    is_ref: false,
                 });
             }
             LPar => {
@@ -256,6 +277,17 @@ impl Parser {
                     RPar => return expr,
                     _ => Parser::error("Missing ')'", &tk),
                 }
+            }
+            Amp => {
+                let var = self.consume();
+                if var.t_type == Var {
+                    return ExprId(Identifier {
+                        name: var.val.unwrap(),
+                        line: var.line,
+                        is_ref: true,
+                    });
+                }
+                Parser::error("Unexpected {}", &tk)
             }
             _ => Parser::error("Unexpected {}", &tk),
         }
@@ -303,8 +335,10 @@ impl Parser {
                 if self.peek_mult(2).t_type == Eq {
                     return StmtAssign(self.parse_assign());
                 }
-                return StmtExpr(self.parse_expr());
-            },
+                return StmtExpr(crate::parser::StmtExpr {
+                    expr: self.parse_expr(),
+                });
+            }
             Func => return StmtFunc(self.parse_func()),
             For => return StmtFor(self.parse_for()),
             Asm => return StmtAsm(self.parse_asm()),
@@ -312,7 +346,20 @@ impl Parser {
                 self.consume();
                 return StmtBlank;
             }
-            _ => return StmtExpr(self.parse_expr()),
+            Int => {
+                if self.peek_mult(2).t_type == At {
+                    self.consume();
+                    return StmtAssignAt(self.parse_assign_at());
+                }
+                return StmtExpr(crate::parser::StmtExpr {
+                    expr: self.parse_expr(),
+                });
+            }
+            _ => {
+                return StmtExpr(crate::parser::StmtExpr {
+                    expr: self.parse_expr(),
+                })
+            }
         }
     }
 

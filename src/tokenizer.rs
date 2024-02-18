@@ -30,6 +30,8 @@ pub enum TokenType {
     RPar,
     LBr,
     RBr,
+    At,
+    Amp,
 
     // Literals
     Int,
@@ -67,6 +69,8 @@ impl TokenType {
             RPar => ")",
             LBr => "{",
             RBr => "}",
+            At => "@",
+            Amp => "&",
             Int => "int",
             Asm => "asm",
             Var => "variable",
@@ -168,7 +172,10 @@ impl Tokenizer {
                         self.next();
                         match self.peek() {
                             Some('&') => self.push_sym(DAmp),
-                            _ => panic!("Unexpected '&' at line {}", self.line),
+                            _ => {
+                                self.push_sym(Amp);
+                                self.pos -= 1
+                            }
                         }
                     }
                     '*' => self.push_sym(Star),
@@ -183,7 +190,7 @@ impl Tokenizer {
                                     Some(_) => self.next(),
                                     None => break,
                                 }
-                            }
+                            },
                             _ => self.push_sym(Slash),
                         }
                     }
@@ -200,6 +207,14 @@ impl Tokenizer {
                     ')' => self.push_sym(RPar),
                     '{' => self.push_sym(LBr),
                     '}' => self.push_sym(RBr),
+                    '@' => {
+                        self.tokens.push(Token {
+                            t_type: Int,
+                            val: Some(String::from("0")),
+                            line: self.line,
+                        });
+                        self.push_sym(At);
+                    }
                     ' ' => self.next(),
                     '\n' | '\r' => {
                         self.next();
