@@ -255,14 +255,15 @@ _start:\n";
             name: stmt_func.arg.name,
             t: Type::Var,
         }));
-        let scope = self.gen_scope(stmt_func.stmts);
+        let (first, second) = self.gen_scope_split(stmt_func.stmts);
         self.stack.pop();
         let name = self.stack.pop().unwrap().unwrap().name;
         return format!(
             "{begin_string}
     push rax
-{scope}
+{first}
 .return_{name}:
+{second}
     add rsp, 8
     ret
 ; Function End"
@@ -295,6 +296,11 @@ _start:\n";
     }
 
     fn gen_scope(&mut self, stmts: Vec<Stmt>) -> String {
+        let (first, second) = self.gen_scope_split(stmts);
+        return first + &second;
+    }
+
+    fn gen_scope_split(&mut self, stmts: Vec<Stmt>) -> (String, String) {
         self.scopes.push(self.stack.len());
         use Stmt::*;
         let mut stmt_string = String::new();
@@ -322,12 +328,17 @@ _start:\n";
         for _ in 0..scope_len {
             self.stack.pop();
         }
-        return format!(
-            "; Scope Start
-{stmt_string}
-    add rsp, {offset}
+        return (
+            format!(
+                "; Scope Start
+{stmt_string}"
+            ),
+            format!(
+                "
+add rsp, {offset}
 ; Scope End",
-            offset = scope_len * 8
+                offset = scope_len * 8
+            ),
         );
     }
 
