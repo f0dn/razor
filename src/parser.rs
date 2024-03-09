@@ -101,6 +101,11 @@ pub struct StmtMRepeat {
     pub stmts: Vec<Stmt>,
 }
 
+pub struct StmtUse {
+    pub path: String,
+    pub ident: Identifier,
+}
+
 pub enum Stmt {
     StmtRet(StmtRet),
     StmtExit(StmtExit),
@@ -113,6 +118,7 @@ pub enum Stmt {
     StmtAsm(StmtAsm),
     StmtExpr(StmtExpr),
     StmtMRepeat(StmtMRepeat),
+    StmtUse(StmtUse),
     StmtBlank,
 }
 
@@ -259,6 +265,12 @@ parse_fn! {
     }
 }
 
+parse_fn! {
+    parse_use -> StmtUse {
+        {Use}, parse_path() => path, {Dot}, parse_ident_name() => ident, {Semi},
+    }
+}
+
 impl<'a> Parser {
     pub fn new(mut tokens: Vec<Token>) -> Parser {
         tokens.reverse();
@@ -279,6 +291,14 @@ impl<'a> Parser {
             macros: Vec::new(),
             parse_tree: Prog { stmts: Vec::new() },
         };
+    }
+
+    fn parse_path(&mut self) -> String {
+        let tk = self.consume();
+        match tk.t_type {
+            Path => return tk.val.unwrap(),
+            _ => Parser::error("Unexpected {}", &tk),
+        }
     }
 
     fn parse_ident_name(&mut self) -> Identifier {
@@ -567,6 +587,7 @@ impl<'a> Parser {
                 self.macros.push(mac);
                 return StmtBlank;
             }
+            Use => return StmtUse(self.parse_use()),
             _ => {
                 return StmtExpr(crate::parser::StmtExpr {
                     expr: self.parse_expr(),

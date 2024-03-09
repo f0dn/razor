@@ -23,17 +23,14 @@ pub struct Generator<'a> {
     macros: &'a Vec<Macro>,
     curr_repeat: usize,
     curr_macro_repeat: Option<&'a Vec<MacroRepeat>>,
+    ext: String,
+    pub links: Vec<&'a String>,
 }
 
 impl<'a> Generator<'a> {
     pub fn new(macros: &'a Vec<Macro>) -> Generator<'a> {
-        let base = "\
-global _start
-
-section .text
-_start:\n";
         return Generator {
-            text: String::from(base),
+            text: String::from("section .text\n"),
             functions: String::new(),
             stack: Vec::new(),
             scopes: Vec::new(),
@@ -41,6 +38,8 @@ _start:\n";
             macros,
             curr_repeat: 0,
             curr_macro_repeat: None,
+            ext: String::new(),
+            links: Vec::new(),
         };
     }
 
@@ -201,6 +200,7 @@ _start:\n";
                                 num_repeats += 1;
                                 self.gen_repeat(&stmt_repeat.stmts)
                             }
+                            StmtUse(stmt_use) => self.gen_use(&stmt_use),
                             StmtBlank => continue,
                         };
                         str.push_str(&stmt);
@@ -251,6 +251,15 @@ _start:\n";
         );
         self.num_jmps += 1;
         return string;
+    }
+
+    fn gen_use(&mut self, stmt_use: &'a StmtUse) -> String {
+        self.ext
+            .push_str(&format!("extern {}\n", stmt_use.ident.name));
+        if !self.links.contains(&&stmt_use.path) {
+            self.links.push(&stmt_use.path);
+        }
+        return String::new();
     }
 
     fn gen_assign(&mut self, stmt_assign: &'a StmtAssign) -> String {
@@ -341,6 +350,10 @@ _start:\n";
     }
 
     fn gen_func(&mut self, stmt_func: &'a StmtFunc) -> String {
+        self.ext.push_str(&format!(
+            "global {}\n",
+            self.get_ident(&stmt_func.ident).name
+        ));
         let begin_string = format!(
             "; Function Start
 {name}:",
@@ -424,6 +437,7 @@ _start:\n";
                 StmtExpr(stmt_expr) => self.gen_expr(&stmt_expr.expr),
                 StmtAssignAt(stmt_assign_at) => self.gen_assign_at(stmt_assign_at),
                 StmtMRepeat(stmt_repeat) => self.gen_repeat(&stmt_repeat.stmts),
+                StmtUse(stmt_use) => self.gen_use(stmt_use),
                 StmtBlank => continue,
             };
             stmt_string.push_str(&stmt);
@@ -446,8 +460,16 @@ add rsp, {offset}
         );
     }
 
-    pub fn gen(&mut self, prog: &'a Prog) {
+    pub fn gen(&mut self, prog: &'a Prog, lib: bool) {
         let scope = self.gen_scope(&prog.stmts);
+        self.text.push_str(&self.ext);
+        self.text.push('\n');
+        if !lib {
+            self.text.push_str(
+                "global _start
+_start:\n",
+            );
+        }
         self.text.push_str(&scope);
         self.text.push('\n');
         self.text.push_str(&self.functions);

@@ -10,4 +10,5 @@ target/
 *.pdb
 
 # Test files
-test.*
+test*
+std*

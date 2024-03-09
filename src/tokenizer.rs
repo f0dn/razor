@@ -14,6 +14,7 @@ pub enum TokenType {
     Func,
     For,
     Mac,
+    Use,
 
     // Symbols
     Semi,
@@ -34,10 +35,12 @@ pub enum TokenType {
     At,
     Amp,
     Hash,
+    Dot,
 
     // Literals
     Int,
     Asm,
+    Path,
 
     // Identifiers
     Var,
@@ -57,6 +60,7 @@ impl TokenType {
             Func => "func",
             For => "for",
             Mac => "mac",
+            Use => "use",
             Semi => ";",
             Eq => "=",
             DEq => "==",
@@ -75,8 +79,10 @@ impl TokenType {
             At => "@",
             Amp => "&",
             Hash => "#",
+            Dot => ".",
             Int => "int",
             Asm => "asm",
+            Path => "path",
             Var => "variable",
             Eof => "EOF",
         }
@@ -123,6 +129,7 @@ impl Tokenizer {
             "func" => self.push_sym(Func),
             "for" => self.push_sym(For),
             "mac" => self.push_sym(Mac),
+            "use" => self.push_sym(Use),
             _ => self.tokens.push(Token {
                 t_type: Var,
                 val: Some(token),
@@ -220,6 +227,32 @@ impl Tokenizer {
                             line: self.line,
                         });
                         self.push_sym(At);
+                    }
+                    '.' => self.push_sym(Dot),
+                    '<' => {
+                        self.next();
+                        let mut path = String::new();
+                        loop {
+                            match self.peek() {
+                                Some('>') => {
+                                    self.next();
+                                    break;
+                                }
+                                Some(ch) => {
+                                    if ch == '\n' || ch == '\r' {
+                                        self.line += 1;
+                                    }
+                                    path.push(ch);
+                                    self.next();
+                                }
+                                None => panic!("Unexpected EOF at line {}", self.line),
+                            }
+                        }
+                        self.tokens.push(Token {
+                            t_type: Path,
+                            val: Some(path),
+                            line: self.line,
+                        });
                     }
                     ' ' => self.next(),
                     '\n' | '\r' => {

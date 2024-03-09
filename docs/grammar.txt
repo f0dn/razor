@@ -10,6 +10,7 @@ STAT          : RETURN or
                 ASM or
                 MACRO or
                 MACRO_REPEAT or
+                USE or
                 EXPR;
 
 RETURN        : return EXPR;
@@ -25,6 +26,8 @@ FOR           : for DECL EXPR; ASSIGN { STAT* }
 CALL          : id ( EXPR )
 
 ASM           : `.*`
+
+USE           : use <path>.id;
 
 MACRO         : mac id ( ## MACRO_ARG* ## ) { STAT* }
 
