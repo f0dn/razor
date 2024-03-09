@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::parser::*;
 use crate::tokenizer::TokenType::*;
 
@@ -7,21 +9,24 @@ enum Type {
     Func,
 }
 
-struct Ident {
-    name: String,
+struct Ident<'a> {
+    name: &'a String,
     t: Type,
 }
 
-pub struct Generator {
+pub struct Generator<'a> {
     pub text: String,
     functions: String,
-    stack: Vec<Option<Ident>>,
+    stack: Vec<Option<Ident<'a>>>,
     scopes: Vec<usize>,
     num_jmps: usize,
+    macros: &'a Vec<Macro>,
+    curr_repeat: usize,
+    curr_macro_repeat: Option<&'a Vec<MacroRepeat>>,
 }
 
-impl Generator {
-    pub fn new() -> Generator {
+impl<'a> Generator<'a> {
+    pub fn new(macros: &'a Vec<Macro>) -> Generator<'a> {
         let base = "\
 global _start
 
@@ -33,33 +38,52 @@ _start:\n";
             stack: Vec::new(),
             scopes: Vec::new(),
             num_jmps: 0,
+            macros,
+            curr_repeat: 0,
+            curr_macro_repeat: None,
         };
     }
 
-    fn gen_expr(&mut self, expr: Expr) -> String {
+    fn gen_expr(&mut self, expr: &'a Expr) -> String {
         use Expr::*;
         let expr_string = match expr {
             ExprInt(int) => format!("    mov rax, {int}"),
             ExprId(expr_var) => {
-                let loc = self.get_loc(&expr_var.name, Type::Var);
-                match loc {
-                    Some(loc) => {
-                        if expr_var.is_ref {
-                            format!(
-                                "    lea rax, [rsp+{offset}]",
-                                offset = self.stack.len() * 8 - loc - 8
-                            )
-                        } else {
-                            format!(
-                                "    mov rax, QWORD [rsp+{offset}]",
-                                offset = self.stack.len() * 8 - loc - 8
-                            )
+                let mut ident = expr_var;
+                let mut macro_var = None;
+                if expr_var.is_macro {
+                    macro_var = Some(self.get_macro_var(&expr_var.name));
+                    if let Some(MacroVar::Ident(id)) = macro_var {
+                        ident = id;
+                        macro_var = None
+                    }
+                }
+                if let Some(macro_var) = macro_var {
+                    match macro_var {
+                        MacroVar::Asm(s) => s.to_string(),
+                        MacroVar::Int(int) => format!("    mov rax, {int}"),
+                        _ => unreachable!(),
+                    }
+                } else {
+                    let loc = self.get_loc(&ident.name, Type::Var);
+                    match loc {
+                        Some(loc) => {
+                            if expr_var.is_ref {
+                                format!(
+                                    "    lea rax, [rsp+{offset}]",
+                                    offset = self.stack.len() * 8 - loc - 8
+                                )
+                            } else {
+                                format!(
+                                    "    mov rax, QWORD [rsp+{offset}]",
+                                    offset = self.stack.len() * 8 - loc - 8
+                                )
+                            }
+                        }
+                        None => {
+                            panic!("Unknown identifier '{}' at line {}", ident.name, ident.line)
                         }
                     }
-                    None => panic!(
-                        "Unknown identifier '{}' at line {}",
-                        expr_var.name, expr_var.line
-                    ),
                 }
             }
             ExprBinOp(bin_op) => {
@@ -114,9 +138,9 @@ _start:\n";
     mov rcx, rax
 {pop}
 {op}",
-                    lhs = self.gen_expr(*bin_op.lhs),
+                    lhs = self.gen_expr(&*bin_op.lhs),
                     push = self.push("rax"),
-                    rhs = self.gen_expr(*bin_op.rhs),
+                    rhs = self.gen_expr(&*bin_op.rhs),
                     pop = self.pop("rax")
                 )
             }
@@ -124,9 +148,15 @@ _start:\n";
                 format!(
                     "{call}
     call {name}",
-                    call = self.gen_expr(expr_call.arg),
+                    call = self.gen_expr(&expr_call.arg),
                     name = expr_call.name.name
                 )
+            }
+            ExprMacro(expr_macro) => {
+                self.curr_macro_repeat = Some(&expr_macro.cont);
+                let scope = self.gen_repeat(&self.macros[expr_macro.mac].stmts);
+                self.curr_macro_repeat = None;
+                return scope;
             }
         };
         return format!(
@@ -137,9 +167,77 @@ _start:\n";
         );
     }
 
-    fn gen_if(&mut self, stmt_if: StmtIf) -> String {
-        let expr = self.gen_expr(stmt_if.expr);
-        let scope = self.gen_scope(stmt_if.stmts);
+    fn gen_repeat(&mut self, stmt_repeat: &'a Vec<Stmt>) -> String {
+        let mut num_repeats = 0;
+        match self.curr_macro_repeat {
+            Some(repeat) => {
+                let mut str = String::new();
+                for i in 0..repeat.len() {
+                    self.curr_repeat = i;
+                    use Stmt::*;
+                    for stmt in stmt_repeat {
+                        str.push('\n');
+                        let stmt = match stmt {
+                            StmtRet(stmt_ret) => self.gen_ret(stmt_ret),
+                            StmtExit(stmt_exit) => self.gen_exit(stmt_exit),
+                            StmtDecl(stmt_decl) => self.gen_decl(stmt_decl),
+                            StmtIf(stmt_if) => self.gen_if(stmt_if),
+                            StmtAssign(stmt_assign) => self.gen_assign(stmt_assign),
+                            StmtFunc(stmt_func) => {
+                                let func = self.gen_func(stmt_func);
+                                self.functions.push_str(&func);
+                                String::new()
+                            }
+                            StmtFor(stmt_for) => self.gen_for(&stmt_for),
+                            StmtAsm(stmt_asm) => {
+                                str.push_str(&stmt_asm.code);
+                                String::new()
+                            }
+                            StmtExpr(stmt_expr) => self.gen_expr(&stmt_expr.expr),
+                            StmtAssignAt(stmt_assign_at) => self.gen_assign_at(stmt_assign_at),
+                            StmtMRepeat(stmt_repeat) => {
+                                self.curr_macro_repeat = Some(&repeat[i].repeats[num_repeats]);
+                                num_repeats += 1;
+                                self.gen_repeat(&stmt_repeat.stmts)
+                            }
+                            StmtBlank => continue,
+                        };
+                        str.push_str(&stmt);
+                    }
+                }
+                self.curr_macro_repeat = Some(repeat);
+                return str;
+            }
+            None => panic!("No current macro"),
+        }
+    }
+
+    fn get_macro_var(&self, ident: &'a str) -> &'a MacroVar {
+        let vars: &HashMap<String, MacroVar>;
+        match &self.curr_macro_repeat {
+            Some(map) => vars = &map[self.curr_repeat].vars,
+            None => panic!("No current macro"),
+        }
+        match vars.get(ident) {
+            Some(var) => return var,
+            None => panic!("Unknown macro variable '{}'", ident),
+        }
+    }
+
+    fn get_ident(&self, ident: &'a Identifier) -> &'a Identifier {
+        if !ident.is_macro {
+            return ident;
+        }
+        let macro_var = self.get_macro_var(&ident.name);
+        match &macro_var {
+            MacroVar::Ident(ident) => return ident,
+            _ => panic!("Expected identifier"),
+        };
+    }
+
+    fn gen_if(&mut self, stmt_if: &'a StmtIf) -> String {
+        let expr = self.gen_expr(&stmt_if.expr);
+        let scope = self.gen_scope(&stmt_if.stmts);
         let string = format!(
             "; If Start
 {expr}
@@ -154,8 +252,8 @@ _start:\n";
         return string;
     }
 
-    fn gen_assign(&mut self, stmt_assign: StmtAssign) -> String {
-        let loc = self.get_loc(&stmt_assign.var.name, Type::Var);
+    fn gen_assign(&mut self, stmt_assign: &'a StmtAssign) -> String {
+        let loc = self.get_loc(&self.get_ident(&stmt_assign.var).name, Type::Var);
         match loc {
             Some(loc) => {
                 return format!(
@@ -163,7 +261,7 @@ _start:\n";
 {expr}
     mov QWORD [rsp+{offset}], rax
 ; Assign End",
-                    expr = self.gen_expr(stmt_assign.expr),
+                    expr = self.gen_expr(&stmt_assign.expr),
                     offset = self.stack.len() * 8 - loc - 8
                 );
             }
@@ -174,8 +272,8 @@ _start:\n";
         }
     }
 
-    fn gen_assign_at(&mut self, stmt_assign_at: StmtAssignAt) -> String {
-        let loc = self.get_loc(&stmt_assign_at.var.name, Type::Var);
+    fn gen_assign_at(&mut self, stmt_assign_at: &'a StmtAssignAt) -> String {
+        let loc = self.get_loc(&self.get_ident(&stmt_assign_at.var).name, Type::Var);
         match loc {
             Some(loc) => {
                 return format!(
@@ -184,7 +282,7 @@ _start:\n";
     mov rcx, QWORD [rsp+{offset}]
     mov [rcx], rax
 ; Assign At End",
-                    expr = self.gen_expr(stmt_assign_at.expr),
+                    expr = self.gen_expr(&stmt_assign_at.expr),
                     offset = self.stack.len() * 8 - loc - 8
                 );
             }
@@ -195,7 +293,7 @@ _start:\n";
         }
     }
 
-    fn gen_decl(&mut self, stmt_decl: StmtDecl) -> String {
+    fn gen_decl(&mut self, stmt_decl: &'a StmtDecl) -> String {
         if self.get_loc(&stmt_decl.var.name, Type::Var).is_some() {
             panic!(
                 "Variable '{}' redeclared at line {}",
@@ -205,10 +303,10 @@ _start:\n";
         let begin_string = format!(
             "; Declaration Start
 {expr}",
-            expr = self.gen_expr(stmt_decl.expr)
+            expr = self.gen_expr(&stmt_decl.expr)
         );
         self.stack.push(Some(Ident {
-            name: stmt_decl.var.name,
+            name: &self.get_ident(&stmt_decl.var).name,
             t: Type::Var,
         }));
         return format!(
@@ -218,8 +316,8 @@ _start:\n";
         );
     }
 
-    fn gen_ret(&mut self, stmt_ret: StmtRet) -> String {
-        let expr = self.gen_expr(stmt_ret.expr);
+    fn gen_ret(&mut self, stmt_ret: &'a StmtRet) -> String {
+        let expr = self.gen_expr(&stmt_ret.expr);
         let name = &self.stack[self.get_func()].as_ref().unwrap().name;
         return format!(
             "; Return Start
@@ -229,7 +327,7 @@ _start:\n";
         );
     }
 
-    fn gen_exit(&mut self, stmt_exit: StmtExit) -> String {
+    fn gen_exit(&mut self, stmt_exit: &'a StmtExit) -> String {
         return format!(
             "; Exit Start
 {expr}
@@ -237,25 +335,25 @@ _start:\n";
     mov rax, 60
     syscall
 ; Exit End",
-            expr = self.gen_expr(stmt_exit.expr)
+            expr = self.gen_expr(&stmt_exit.expr)
         );
     }
 
-    fn gen_func(&mut self, stmt_func: StmtFunc) -> String {
+    fn gen_func(&mut self, stmt_func: &'a StmtFunc) -> String {
         let begin_string = format!(
             "; Function Start
 {name}:",
-            name = stmt_func.ident.name
+            name = self.get_ident(&stmt_func.ident).name
         );
         self.stack.push(Some(Ident {
-            name: stmt_func.ident.name,
+            name: &self.get_ident(&stmt_func.ident).name,
             t: Type::Func,
         }));
         self.stack.push(Some(Ident {
-            name: stmt_func.arg.name,
+            name: &stmt_func.arg.name,
             t: Type::Var,
         }));
-        let (first, second) = self.gen_scope_split(stmt_func.stmts);
+        let (first, second) = self.gen_scope_split(&stmt_func.stmts);
         self.stack.pop();
         let name = self.stack.pop().unwrap().unwrap().name;
         return format!(
@@ -270,7 +368,7 @@ _start:\n";
         );
     }
 
-    fn gen_for(&mut self, stmt_for: StmtFor) -> String {
+    fn gen_for(&mut self, stmt_for: &'a StmtFor) -> String {
         let num_jmps = self.num_jmps;
         let begin_string = format!(
             "; For Start
@@ -284,29 +382,29 @@ _start:\n";
     jmp .for_{start_num}
 .for_{end_num}:
 ; For End",
-            init = self.gen_decl(stmt_for.init),
-            expr = self.gen_expr(stmt_for.cond),
+            init = self.gen_decl(&stmt_for.init),
+            expr = self.gen_expr(&stmt_for.cond),
             start_num = num_jmps,
-            scope = self.gen_scope(stmt_for.stmts),
-            iter = self.gen_assign(stmt_for.iter),
+            scope = self.gen_scope(&stmt_for.stmts),
+            iter = self.gen_assign(&stmt_for.iter),
             end_num = num_jmps + 1
         );
         self.num_jmps += 2;
         return begin_string;
     }
 
-    fn gen_scope(&mut self, stmts: Vec<Stmt>) -> String {
+    fn gen_scope(&mut self, stmts: &'a Vec<Stmt>) -> String {
         let (first, second) = self.gen_scope_split(stmts);
         return first + &second;
     }
 
-    fn gen_scope_split(&mut self, stmts: Vec<Stmt>) -> (String, String) {
+    fn gen_scope_split(&mut self, stmts: &'a Vec<Stmt>) -> (String, String) {
         self.scopes.push(self.stack.len());
         use Stmt::*;
         let mut stmt_string = String::new();
         for stmt in stmts {
             stmt_string.push('\n');
-            stmt_string.push_str(&match stmt {
+            let stmt = match stmt {
                 StmtRet(stmt_ret) => self.gen_ret(stmt_ret),
                 StmtExit(stmt_exit) => self.gen_exit(stmt_exit),
                 StmtDecl(stmt_decl) => self.gen_decl(stmt_decl),
@@ -317,12 +415,17 @@ _start:\n";
                     self.functions.push_str(&func);
                     String::new()
                 }
-                StmtFor(stmt_for) => self.gen_for(stmt_for),
-                StmtAsm(stmt_asm) => stmt_asm.code,
-                StmtExpr(stmt_expr) => self.gen_expr(stmt_expr.expr),
+                StmtFor(stmt_for) => self.gen_for(&stmt_for),
+                StmtAsm(stmt_asm) => {
+                    stmt_string.push_str(&stmt_asm.code);
+                    String::new()
+                }
+                StmtExpr(stmt_expr) => self.gen_expr(&stmt_expr.expr),
                 StmtAssignAt(stmt_assign_at) => self.gen_assign_at(stmt_assign_at),
+                StmtMRepeat(stmt_repeat) => self.gen_repeat(&stmt_repeat.stmts),
                 StmtBlank => continue,
-            });
+            };
+            stmt_string.push_str(&stmt);
         }
         let scope_len = self.stack.len() - self.scopes.pop().unwrap();
         for _ in 0..scope_len {
@@ -342,8 +445,8 @@ add rsp, {offset}
         );
     }
 
-    pub fn gen(&mut self, prog: Prog) {
-        let scope = self.gen_scope(prog.stmts);
+    pub fn gen(&mut self, prog: &'a Prog) {
+        let scope = self.gen_scope(&prog.stmts);
         self.text.push_str(&scope);
         self.text.push('\n');
         self.text.push_str(&self.functions);
@@ -378,7 +481,7 @@ add rsp, {offset}
         for i in func..self.stack.len() {
             match &self.stack[i] {
                 Some(id) => {
-                    if &id.name == ident && &id.t == &t {
+                    if id.name == ident && &id.t == &t {
                         return Some(i * 8);
                     }
                 }

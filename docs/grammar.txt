@@ -8,6 +8,8 @@ STAT          : RETURN or
                 COMMENT or
                 FOR or
                 ASM or
+                MACRO or
+                MACRO_REPEAT or
                 EXPR;
 
 RETURN        : return EXPR;
@@ -24,10 +26,22 @@ CALL          : id ( EXPR )
 
 ASM           : `.*`
 
+MACRO         : mac id ( ## MACRO_ARG* ## ) { STAT* }
+
+MACRO_CALL    : id # ( .* )
+
+MACRO_REPEAT  : # ( STAT* ) #
+
+MACRO_ARG     : # id token # or
+                token or
+                # ( ## MACRO_ARG* ## token int int ) #
+
 EXPR          : OP or
                 CALL or
                 int or
-                [&] id
+                [&] id or
+                # id or
+                MACRO_CALL
 
 OP            : EXPR || EXPR or     prec = 0
                 EXPR && EXPR or     prec = 0

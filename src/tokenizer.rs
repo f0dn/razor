@@ -4,7 +4,7 @@ pub struct Token {
     pub line: usize,
 }
 
-#[derive(PartialEq, Eq, Hash)]
+#[derive(PartialEq, Eq, Hash, Copy, Clone)]
 pub enum TokenType {
     // Keywords
     Ret,
@@ -13,6 +13,7 @@ pub enum TokenType {
     If,
     Func,
     For,
+    Mac,
 
     // Symbols
     Semi,
@@ -32,6 +33,7 @@ pub enum TokenType {
     RBr,
     At,
     Amp,
+    Hash,
 
     // Literals
     Int,
@@ -54,6 +56,7 @@ impl TokenType {
             If => "if",
             Func => "func",
             For => "for",
+            Mac => "mac",
             Semi => ";",
             Eq => "=",
             DEq => "==",
@@ -71,6 +74,7 @@ impl TokenType {
             RBr => "}",
             At => "@",
             Amp => "&",
+            Hash => "#",
             Int => "int",
             Asm => "asm",
             Var => "variable",
@@ -118,6 +122,7 @@ impl Tokenizer {
             "if" => self.push_sym(If),
             "func" => self.push_sym(Func),
             "for" => self.push_sym(For),
+            "mac" => self.push_sym(Mac),
             _ => self.tokens.push(Token {
                 t_type: Var,
                 val: Some(token),
@@ -178,6 +183,7 @@ impl Tokenizer {
                             }
                         }
                     }
+                    '#' => self.push_sym(Hash),
                     '*' => self.push_sym(Star),
                     '+' => self.push_sym(Plus),
                     '-' => self.push_sym(Dash),

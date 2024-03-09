@@ -23,8 +23,8 @@ fn main() {
     parser.parse();
     println!("Done parsing!");
 
-    let mut generator = generator::Generator::new();
-    generator.gen(parser.parse_tree);
+    let mut generator = generator::Generator::new(&parser.macros);
+    generator.gen(&parser.parse_tree);
     println!("Done generating code!");
 
     let mut out = File::create(out_path).expect("Can't create file");

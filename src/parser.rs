@@ -7,6 +7,7 @@ pub struct Identifier {
     pub name: String,
     pub line: usize,
     pub is_ref: bool,
+    pub is_macro: bool,
 }
 
 pub struct BinOp {
@@ -20,11 +21,28 @@ pub struct ExprCall {
     pub arg: Expr,
 }
 
+pub struct ExprMacro {
+    pub mac: usize,
+    pub cont: Vec<MacroRepeat>,
+}
+
+pub struct MacroRepeat {
+    pub vars: HashMap<String, MacroVar>,
+    pub repeats: Vec<Vec<MacroRepeat>>,
+}
+
+pub enum MacroVar {
+    Asm(String),
+    Ident(Identifier),
+    Int(String),
+}
+
 pub enum Expr {
     ExprInt(String),
     ExprId(Identifier),
     ExprCall(Box<ExprCall>),
     ExprBinOp(BinOp),
+    ExprMacro(ExprMacro),
 }
 
 pub struct StmtIf {
@@ -78,6 +96,10 @@ pub struct StmtExpr {
     pub expr: Expr,
 }
 
+pub struct StmtMRepeat {
+    pub stmts: Vec<Stmt>,
+}
+
 pub enum Stmt {
     StmtRet(StmtRet),
     StmtExit(StmtExit),
@@ -89,7 +111,22 @@ pub enum Stmt {
     StmtFor(StmtFor),
     StmtAsm(StmtAsm),
     StmtExpr(StmtExpr),
+    StmtMRepeat(StmtMRepeat),
     StmtBlank,
+}
+
+pub struct Macro {
+    pub ident: Identifier,
+    pub args: Vec<MacroArg>,
+    pub stmts: Vec<Stmt>,
+}
+
+pub enum MacroArg {
+    Ident(Identifier),
+    Asm(Identifier),
+    Int(Identifier),
+    Token(TokenType),
+    Group(Vec<MacroArg>, TokenType, u32, u32),
 }
 
 pub struct Prog {
@@ -99,6 +136,7 @@ pub struct Prog {
 pub struct Parser {
     tokens: Vec<Token>,
     op: HashMap<TokenType, i8>,
+    pub macros: Vec<Macro>,
     pub parse_tree: Prog,
 }
 
@@ -206,7 +244,21 @@ parse_fn! {
     }
 }
 
-impl Parser {
+parse_fn! {
+    parse_macro -> Macro {
+        {Mac}, parse_ident_name() => ident, {LPar}, parse_mult_macro() => args, {RPar}, {LBr},
+            parse_mult(RBr) => stmts,
+        {RBr},
+    }
+}
+
+parse_fn! {
+    parse_repeat -> StmtMRepeat {
+        {Hash}, {LPar}, parse_mult(RPar) => stmts, {RPar}, {Hash},
+    }
+}
+
+impl<'a> Parser {
     pub fn new(mut tokens: Vec<Token>) -> Parser {
         tokens.reverse();
         return Parser {
@@ -223,11 +275,17 @@ impl Parser {
                 (DAmp, 0),
                 (DPipe, 0),
             ]),
+            macros: Vec::new(),
             parse_tree: Prog { stmts: Vec::new() },
         };
     }
 
     fn parse_ident_name(&mut self) -> Identifier {
+        let mut is_macro = false;
+        if self.peek().t_type == Hash {
+            is_macro = true;
+            self.consume();
+        }
         let tk = self.consume();
         match tk.t_type {
             Var => {
@@ -236,6 +294,7 @@ impl Parser {
                     name,
                     line: tk.line,
                     is_ref: false,
+                    is_macro,
                 };
             }
             _ => Parser::error("Unexpected {}", &tk),
@@ -256,18 +315,48 @@ impl Parser {
 
     fn parse_atom(&mut self) -> Expr {
         use Expr::*;
-        let tk = self.consume();
+        let mut tk = self.consume();
         match tk.t_type {
             Int => return ExprInt(tk.val.unwrap()),
-            Var => {
+            Var | Amp | Hash => {
                 if self.peek().t_type == LPar {
                     self.tokens.push(tk);
                     return ExprCall(Box::new(self.parse_call()));
                 }
+
+                let mut is_ref = false;
+                if tk.t_type == Amp {
+                    is_ref = true;
+                    tk = self.consume();
+                }
+
+                if tk.t_type == Hash {
+                    tk = self.consume();
+                    if tk.t_type != Var {
+                        Parser::error("Unexpected {}", &tk);
+                    }
+                    return ExprId(Identifier {
+                        name: tk.val.unwrap(),
+                        line: tk.line,
+                        is_ref,
+                        is_macro: true,
+                    });
+                }
+
+                if tk.t_type != Var {
+                    Parser::error("Unexpected {}", &tk);
+                }
+
+                if self.peek().t_type == Hash {
+                    self.tokens.push(tk);
+                    return self.parse_macro_call();
+                }
+
                 return ExprId(Identifier {
                     name: tk.val.unwrap(),
                     line: tk.line,
-                    is_ref: false,
+                    is_ref,
+                    is_macro: false,
                 });
             }
             LPar => {
@@ -277,17 +366,6 @@ impl Parser {
                     RPar => return expr,
                     _ => Parser::error("Missing ')'", &tk),
                 }
-            }
-            Amp => {
-                let var = self.consume();
-                if var.t_type == Var {
-                    return ExprId(Identifier {
-                        name: var.val.unwrap(),
-                        line: var.line,
-                        is_ref: true,
-                    });
-                }
-                Parser::error("Unexpected {}", &tk)
             }
             _ => Parser::error("Unexpected {}", &tk),
         }
@@ -323,6 +401,132 @@ impl Parser {
         return self.parse_expr_prec(0);
     }
 
+    fn get_args_from_vec(&self, vec: &Vec<usize>) -> &Vec<MacroArg> {
+        let mut args = &self.macros[vec[0]].args;
+        for i in 1..vec.len() {
+            match &args[vec[i]] {
+                MacroArg::Group(a, _, _, _) => {
+                    args = a;
+                }
+                _ => unreachable!(),
+            }
+        }
+        return args;
+    }
+
+    fn parse_macro_inner(&mut self, path: &mut Vec<usize>) -> MacroRepeat {
+        let mut vars = HashMap::new();
+        let mut repeats = Vec::new();
+        for i in 0..self.get_args_from_vec(path).len() {
+            let mut tk = Token {
+                t_type: Eof,
+                val: None,
+                line: 0,
+            };
+            match &self.get_args_from_vec(path)[i] {
+                MacroArg::Group(_, _, _, _) => (),
+                _ => tk = self.consume(),
+            }
+            match &self.get_args_from_vec(path)[i] {
+                MacroArg::Ident(ident) => {
+                    if tk.t_type != Var {
+                        Parser::error("Unexpected {}", &tk);
+                    }
+                    vars.insert(
+                        ident.name.clone(),
+                        MacroVar::Ident(Identifier {
+                            name: tk.val.unwrap(),
+                            line: tk.line,
+                            is_ref: false,
+                            is_macro: false,
+                        }),
+                    );
+                }
+                MacroArg::Asm(ident) => {
+                    if tk.t_type != Asm {
+                        Parser::error("Unexpected {}", &tk);
+                    }
+                    vars.insert(ident.name.clone(), MacroVar::Asm(tk.val.unwrap()));
+                }
+                MacroArg::Int(ident) => {
+                    if tk.t_type != Int {
+                        Parser::error("Unexpected {}", &tk);
+                    }
+                    vars.insert(ident.name.clone(), MacroVar::Int(tk.val.unwrap()));
+                }
+                MacroArg::Token(token) => {
+                    if token != &tk.t_type {
+                        Parser::error("Unexpected {}", &tk);
+                    }
+                }
+                MacroArg::Group(_, end, lower, upper) => {
+                    let mut count = 1;
+                    let lower = *lower;
+                    let upper = *upper;
+                    let end = *end;
+
+                    path.push(i);
+
+                    let mut inner = Vec::new();
+                    loop {
+                        if self.peek().t_type == end {
+                            self.consume();
+                            break;
+                        }
+
+                        let repeat = self.parse_macro_inner(path);
+                        inner.push(repeat);
+
+                        count += 1;
+                    }
+                    if count < lower || count > upper {
+                        Parser::error("Failed to parse macro", &self.peek());
+                    }
+
+                    repeats.push(inner);
+                }
+            }
+        }
+        return MacroRepeat { repeats, vars };
+    }
+
+    fn parse_macro_call(&mut self) -> Expr {
+        let tk = self.consume();
+        match tk.t_type {
+            Var => {
+                let name = tk.val.unwrap();
+                let tk = self.consume();
+                if tk.t_type != Hash {
+                    Parser::error("Unexpected {}", &tk);
+                }
+                let tk = self.consume();
+                if tk.t_type != LPar {
+                    Parser::error("Unexpected {}", &tk);
+                }
+                let mut idx = None;
+                for i in 0..self.macros.len() {
+                    if self.macros[i].ident.name == name {
+                        idx = Some(i);
+                        break;
+                    }
+                }
+                if idx.is_none() {
+                    Parser::error("Undefined macro {}", &tk);
+                }
+                let repeat = self.parse_macro_inner(&mut vec![idx.unwrap()]);
+                let tk = self.consume();
+                if tk.t_type != RPar {
+                    Parser::error("Unexpected {}", &tk);
+                }
+                return Expr::ExprMacro(ExprMacro {
+                    mac: idx.unwrap(),
+                    cont: vec![repeat],
+                });
+            }
+            _ => Parser::error("Unexpected {}", &tk),
+        }
+    }
+
     fn parse_stmt(&mut self) -> Stmt {
         use Stmt::*;
         let tk = self.peek();
@@ -339,6 +543,7 @@ impl Parser {
                     expr: self.parse_expr(),
                 });
             }
+            Hash => return StmtMRepeat(self.parse_repeat()),
             Func => return StmtFunc(self.parse_func()),
             For => return StmtFor(self.parse_for()),
             Asm => return StmtAsm(self.parse_asm()),
@@ -355,12 +560,80 @@ impl Parser {
                     expr: self.parse_expr(),
                 });
             }
+            Mac => {
+                let mac = self.parse_macro();
+                self.macros.push(mac);
+                return StmtBlank;
+            }
             _ => {
                 return StmtExpr(crate::parser::StmtExpr {
                     expr: self.parse_expr(),
                 })
             }
         }
+    }
+
+    fn parse_macro_arg(&mut self) -> MacroArg {
+        let tk = self.consume();
+        match tk.t_type {
+            Hash => {
+                let tk = self.consume();
+                let arg = match tk.t_type {
+                    LPar => {
+                        let args = self.parse_mult_macro();
+                        let end = self.consume();
+
+                        let tk = self.consume();
+                        if tk.t_type != Int {
+                            Parser::error("Unexpected {}", &tk);
+                        }
+                        let lower = tk.val.unwrap().parse::<u32>().unwrap();
+                        let tk = self.consume();
+                        if tk.t_type != Int {
+                            Parser::error("Unexpected {}", &tk);
+                        }
+                        let upper = tk.val.unwrap().parse::<u32>().unwrap();
+                        let tk = self.consume();
+                        if tk.t_type != RPar {
+                            Parser::error("Unexpected {}", &tk);
+                        }
+                        MacroArg::Group(args, end.t_type, lower, upper)
+                    }
+                    Asm => MacroArg::Asm(self.parse_ident_name()),
+                    Int => MacroArg::Int(self.parse_ident_name()),
+                    Var => MacroArg::Ident(self.parse_ident_name()),
+                    _ => Parser::error("Unexpected {}", &tk),
+                };
+                let tk = self.consume();
+                if tk.t_type != Hash {
+                    Parser::error("Unexpected {}", &tk);
+                }
+                return arg;
+            }
+            _ => return MacroArg::Token(tk.t_type),
+        }
+    }
+
+    fn parse_mult_macro(&mut self) -> Vec<MacroArg> {
+        let t = self.consume();
+        if t.t_type != Hash {
+            Parser::error("unexpected {}", &t);
+        }
+        let t = self.consume();
+        if t.t_type != Hash {
+            Parser::error("unexpected {}", &t);
+        }
+        let mut args = Vec::new();
+        loop {
+            if self.peek().t_type == Hash && self.peek_mult(2).t_type == Hash {
+                self.consume();
+                self.consume();
+                break;
+            } else {
+                args.push(self.parse_macro_arg());
+            }
+        }
+        return args;
     }
 
     fn parse_mult(&mut self, tk: TokenType) -> Vec<Stmt> {
