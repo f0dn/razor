@@ -39,7 +39,9 @@ MACRO_ARG     : # id token # or
 EXPR          : OP or
                 CALL or
                 int or
+                str or
                 [&] id or
+                asm or
                 # id or
                 MACRO_CALL
 

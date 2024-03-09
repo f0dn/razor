@@ -42,6 +42,7 @@ pub enum Expr {
     ExprId(Identifier),
     ExprCall(Box<ExprCall>),
     ExprBinOp(BinOp),
+    ExprAsm(String),
     ExprMacro(ExprMacro),
 }
 
@@ -359,6 +360,7 @@ impl<'a> Parser {
                     is_macro: false,
                 });
             }
+            Asm => return ExprAsm(tk.val.unwrap()),
             LPar => {
                 let expr = self.parse_expr();
                 let tk = self.consume();

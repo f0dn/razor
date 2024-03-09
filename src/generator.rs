@@ -152,6 +152,7 @@ _start:\n";
                     name = expr_call.name.name
                 )
             }
+            ExprAsm(asm) => asm.to_string(),
             ExprMacro(expr_macro) => {
                 self.curr_macro_repeat = Some(&expr_macro.cont);
                 let scope = self.gen_repeat(&self.macros[expr_macro.mac].stmts);
