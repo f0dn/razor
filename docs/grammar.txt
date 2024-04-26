@@ -11,6 +11,7 @@ STAT          : RETURN or
                 MACRO or
                 MACRO_REPEAT or
                 USE or
+                EXIT or
                 EXPR;
 
 RETURN        : return EXPR;
@@ -67,3 +68,5 @@ OP            : EXPR || EXPR or     prec = 0
 IF            : if EXPR { STAT* }
 
 FUNC          : func id ( id ) { STAT* }
+
+EXIT          : exit EXPR;
