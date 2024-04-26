@@ -36,6 +36,8 @@ pub enum TokenType {
     Amp,
     Hash,
     Dot,
+    Lt,
+    Gt,
 
     // Literals
     Int,
@@ -80,6 +82,8 @@ impl TokenType {
             Amp => "&",
             Hash => "#",
             Dot => ".",
+            Lt => "<",
+            Gt => ">",
             Int => "int",
             Asm => "asm",
             Path => "path",
@@ -230,30 +234,35 @@ impl Tokenizer {
                     }
                     '.' => self.push_sym(Dot),
                     '<' => {
-                        self.next();
-                        let mut path = String::new();
-                        loop {
-                            match self.peek() {
-                                Some('>') => {
-                                    self.next();
-                                    break;
-                                }
-                                Some(ch) => {
-                                    if ch == '\n' || ch == '\r' {
-                                        self.line += 1;
+                        if self.tokens.last().unwrap().t_type == Use {
+                            self.next();
+                            let mut path = String::new();
+                            loop {
+                                match self.peek() {
+                                    Some('>') => {
+                                        self.next();
+                                        break;
                                     }
-                                    path.push(ch);
-                                    self.next();
+                                    Some(ch) => {
+                                        if ch == '\n' || ch == '\r' {
+                                            self.line += 1;
+                                        }
+                                        path.push(ch);
+                                        self.next();
+                                    }
+                                    None => panic!("Unexpected EOF at line {}", self.line),
                                 }
-                                None => panic!("Unexpected EOF at line {}", self.line),
                             }
+                            self.tokens.push(Token {
+                                t_type: Path,
+                                val: Some(path),
+                                line: self.line,
+                            });
+                        } else {
+                            self.push_sym(Lt);
                         }
-                        self.tokens.push(Token {
-                            t_type: Path,
-                            val: Some(path),
-                            line: self.line,
-                        });
                     }
+                    '>' => self.push_sym(Gt),
                     ' ' => self.next(),
                     '\n' | '\r' => {
                         self.next();

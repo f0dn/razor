@@ -122,6 +122,19 @@ impl<'a> Generator<'a> {
     xor al, 0b00000001
     movzx rax, al"
                     }
+                    Lt => {
+                        "    cmp rax, rcx
+    setc al
+    movzx rax, al"
+                    }
+                    Gt => {
+                        "    cmp rax, rcx
+    setz al
+    cmc
+    setc ah
+    xor al, ah
+    movzx rax, al"
+                    }
                     Ex => {
                         "    cmp rcx, 0
     setz al

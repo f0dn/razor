@@ -53,6 +53,8 @@ EXPR          : OP or
 OP            : EXPR || EXPR or     prec = 0
                 EXPR && EXPR or     prec = 0
                 EXPR == EXPR or     prec = 1
+                EXPR > EXPR or      prec = 1
+                EXPR < EXPR or      prec = 1
                 EXPR + EXPR or      prec = 2
                 EXPR - EXPR or      prec = 2
                 EXPR * EXPR or      prec = 3

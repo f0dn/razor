@@ -284,6 +284,8 @@ impl<'a> Parser {
                 (Per, 3),
                 (Plus, 2),
                 (Dash, 2),
+                (Gt, 1),
+                (Lt, 1),
                 (DEq, 1),
                 (DAmp, 0),
                 (DPipe, 0),
