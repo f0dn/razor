@@ -1,4 +1,4 @@
-PROGRAM       : STAT*
+PROGRAM       : MACRO_USE* STAT*
 
 STAT          : RETURN or
                 DECL or
@@ -29,13 +29,15 @@ ASM           : `.*`
 
 USE           : use <path>.id;
 
+MACRO_USE     : #USE;
+
 MACRO         : mac id ( ## MACRO_ARG* ## ) { STAT* }
 
 MACRO_CALL    : id # ( .* )
 
 MACRO_REPEAT  : # ( STAT* ) #
 
-MACRO_ARG     : # id token # or
+MACRO_ARG     : # token id # or
                 token or
                 # ( ## MACRO_ARG* ## token int int ) #
 

@@ -112,7 +112,7 @@ impl Tokenizer {
         loop {
             match self.peek() {
                 Some(ch) => match ch {
-                    '0'..='9' | 'a'..='z' | 'A'..='Z' => {
+                    '0'..='9' | 'a'..='z' | 'A'..='Z' | '_' => {
                         self.next();
                         token.push(ch);
                     }
@@ -312,25 +312,37 @@ impl Tokenizer {
                                 None => panic!("Unexpected EOF at line {}", self.line),
                             }
                         }
-                        let mut asm = format!("    \
+                        let mut asm = format!(
+                            "    \
     mov rax, 9
-    mov rsi, {len}
+    mov rsi, {len1}
     mov rdx, 3
     mov r10, 33
     mov r8, 255
     mov r9, 0
     syscall
-    mov QWORD [rax], {len}\n", len = chars.len() * 8);
+    mov QWORD [rax], {len2}\n",
+                            len1 = chars.len() * 8,
+                            len2 = chars.len() * 8 + 8
+                        );
                         for i in 0..chars.len() {
-                            asm.push_str(&format!("    mov QWORD [rax + {offset}], {ch}\n", offset = (i + 1) * 8, ch = chars[i] as u8));
+                            asm.push_str(&format!(
+                                "    mov QWORD [rax + {offset}], {ch}\n",
+                                offset = (i + 1) * 8,
+                                ch = chars[i] as u8
+                            ));
                         }
+                        asm.push_str(&format!(
+                            "    mov QWORD [rax + {offset}], 0\n",
+                            offset = chars.len() * 8 + 8
+                        ));
                         self.tokens.push(Token {
                             t_type: Asm,
                             val: Some(asm),
                             line: self.line,
                         });
                     }
-                    'a'..='z' | 'A'..='Z' => self.tokenize_word(),
+                    'a'..='z' | 'A'..='Z' | '_' => self.tokenize_word(),
                     '0'..='9' => self.tokenize_num(),
                     _ => panic!("Unexpected '{}' at line {}", ch, self.line),
                 },

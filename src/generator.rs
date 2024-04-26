@@ -384,6 +384,7 @@ impl<'a> Generator<'a> {
 
     fn gen_for(&mut self, stmt_for: &'a StmtFor) -> String {
         let num_jmps = self.num_jmps;
+        self.num_jmps += 2;
         let begin_string = format!(
             "; For Start
 {init}
@@ -403,7 +404,6 @@ impl<'a> Generator<'a> {
             iter = self.gen_assign(&stmt_for.iter),
             end_num = num_jmps + 1
         );
-        self.num_jmps += 2;
         return begin_string;
     }
 
@@ -504,7 +504,7 @@ _start:\n",
         for i in func..self.stack.len() {
             match &self.stack[i] {
                 Some(id) => {
-                    if id.name == ident && &id.t == &t {
+                    if id.name == ident && &id.t == &t && id.name != "_" {
                         return Some(i * 8);
                     }
                 }

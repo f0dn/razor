@@ -492,7 +492,6 @@ impl<'a> Parser {
                     let mut inner = Vec::new();
                     loop {
                         if self.peek().t_type == end {
-                            self.consume();
                             break;
                         }
 
@@ -611,12 +610,12 @@ impl<'a> Parser {
                             Parser::error("Unexpected {}", &tk);
                         }
                         let lower = tk.val.unwrap().parse::<u32>().unwrap();
-                        let tk = self.consume();
-                        if tk.t_type != Int {
-                            Parser::error("Unexpected {}", &tk);
+                        let mut tk = self.consume();
+                        let mut upper = u32::MAX;
+                        if tk.t_type == Int {
+                            upper = tk.val.unwrap().parse::<u32>().unwrap();
+                            tk = self.consume();
                         }
-                        let upper = tk.val.unwrap().parse::<u32>().unwrap();
-                        let tk = self.consume();
                         if tk.t_type != RPar {
                             Parser::error("Unexpected {}", &tk);
                         }
@@ -673,6 +672,24 @@ impl<'a> Parser {
 
     pub fn parse(&mut self) {
         self.parse_tree.stmts = self.parse_mult(Eof);
+    }
+
+    pub fn parse_macro_uses(&mut self) -> Vec<StmtUse> {
+        let mut uses = Vec::new();
+        loop {
+            match self.peek().t_type {
+                Hash => {
+                    self.consume();
+                    uses.push(self.parse_use());
+                }
+                _ => break,
+            }
+        }
+        return uses;
+    }
+
+    pub fn add_macro(&mut self, mac: Macro) {
+        self.macros.push(mac);
     }
 
     fn peek(&self) -> &Token {

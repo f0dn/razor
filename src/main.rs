@@ -3,6 +3,8 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::process::Command;
 
+use parser::Macro;
+
 mod generator;
 mod parser;
 mod tokenizer;
@@ -12,7 +14,7 @@ fn main() {
     let out_path = args().nth(2).expect("No output file provided");
 
     let mut files = Vec::new();
-    compile(&inp_path, false, &mut files);
+    compile(&inp_path, false, &mut files, false);
 
     Command::new("ld")
         .args(&files)
@@ -29,7 +31,7 @@ fn main() {
     }
 }
 
-fn compile(path: &str, lib: bool, files: &mut Vec<String>) {
+fn compile(path: &str, lib: bool, files: &mut Vec<String>, for_macro: bool) -> Vec<Macro> {
     let mut file = File::open(path).expect("Could not open file");
 
     let mut text = String::new();
@@ -41,7 +43,23 @@ fn compile(path: &str, lib: bool, files: &mut Vec<String>) {
     tokenizer.tokenize();
 
     let mut parser = parser::Parser::new(tokenizer.tokens);
+    let macro_uses = parser.parse_macro_uses();
+
+    for macro_use in &macro_uses {
+        let macros = compile(&macro_use.path, true, files, true);
+        for m in macros {
+            if m.ident.name == macro_use.ident.name {
+                parser.add_macro(m);
+                break;
+            }
+        }
+    }
+
     parser.parse();
+
+    if for_macro {
+        return parser.macros;
+    }
 
     let mut generator = generator::Generator::new(&parser.macros);
     generator.gen(&parser.parse_tree, lib);
@@ -67,6 +85,8 @@ fn compile(path: &str, lib: bool, files: &mut Vec<String>) {
         .expect("Failed to execute rm");
 
     for name in &generator.links {
-        compile(name, true, files);
+        compile(name, true, files, false);
     }
+
+    return Vec::new();
 }
