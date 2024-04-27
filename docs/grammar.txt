@@ -40,7 +40,7 @@ MACRO_REPEAT  : # ( STAT* ) #
 
 MACRO_ARG     : # token id # or
                 token or
-                # ( ## MACRO_ARG* ## token int int ) #
+                # ( ## MACRO_ARG* ## token int [int] ) #
 
 EXPR          : OP or
                 CALL or

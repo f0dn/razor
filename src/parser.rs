@@ -517,7 +517,7 @@ impl<'a> Parser {
         let tk = self.consume();
         match tk.t_type {
             Var => {
-                let name = tk.val.unwrap();
+                let name = tk;
                 let tk = self.consume();
                 if tk.t_type != Hash {
                     Parser::error("Unexpected {}", &tk);
@@ -528,13 +528,15 @@ impl<'a> Parser {
                 }
                 let mut idx = None;
                 for i in 0..self.macros.len() {
-                    if self.macros[i].ident.name == name {
-                        idx = Some(i);
-                        break;
+                    if let Some(macro_name) = &name.val {
+                        if self.macros[i].ident.name == *macro_name {
+                            idx = Some(i);
+                            break;
+                        }
                     }
                 }
                 if idx.is_none() {
-                    Parser::error("Undefined macro {}", &tk);
+                    Parser::error("Undefined macro {}", &name);
                 }
                 let repeat = self.parse_macro_inner(&mut vec![idx.unwrap()]);
                 let tk = self.consume();
@@ -709,7 +711,16 @@ impl<'a> Parser {
     fn error(err: &str, token: &Token) -> ! {
         panic!(
             "{} at line {}",
-            err.replace("{}", &format!("'{}'", &token.t_type.val())),
+            err.replace(
+                "{}",
+                &format!(
+                    "'{}'",
+                    match &token.val {
+                        None => token.t_type.val(),
+                        Some(val) => val,
+                    }
+                )
+            ),
             token.line,
         );
     }

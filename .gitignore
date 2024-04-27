@@ -11,4 +11,4 @@ target/
 
 # Test files
 test*
-std*
+std/
