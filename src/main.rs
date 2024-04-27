@@ -85,7 +85,9 @@ fn compile(path: &str, lib: bool, files: &mut Vec<String>, for_macro: bool) -> V
         .expect("Failed to execute rm");
 
     for name in &generator.links {
-        compile(name, true, files, false);
+        if !files.contains(&format!("{}.o", name)) {
+            compile(name, true, files, false);
+        }
     }
 
     return Vec::new();
