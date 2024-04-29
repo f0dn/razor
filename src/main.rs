@@ -10,11 +10,14 @@ mod parser;
 mod tokenizer;
 
 fn main() {
-    let inp_path = args().nth(1).expect("No input file provided");
-    let out_path = args().nth(2).expect("No output file provided");
+    let mut args = args();
+    args.next();
+    let inp_path = args.next().expect("No input file provided");
+    let out_path = args.next().expect("No output file provided");
+    let keep_asm = args.next().is_some();
 
     let mut files = Vec::new();
-    compile(&inp_path, false, &mut files, false);
+    compile(&inp_path, false, &mut files, false, keep_asm);
 
     Command::new("ld")
         .args(&files)
@@ -31,7 +34,13 @@ fn main() {
     }
 }
 
-fn compile(path: &str, lib: bool, files: &mut Vec<String>, for_macro: bool) -> Vec<Macro> {
+fn compile(
+    path: &str,
+    lib: bool,
+    files: &mut Vec<String>,
+    for_macro: bool,
+    keep_asm: bool,
+) -> Vec<Macro> {
     let mut file = File::open(path).expect("Could not open file");
 
     let mut text = String::new();
@@ -46,7 +55,7 @@ fn compile(path: &str, lib: bool, files: &mut Vec<String>, for_macro: bool) -> V
     let macro_uses = parser.parse_macro_uses();
 
     for macro_use in &macro_uses {
-        let macros = compile(&macro_use.path, true, files, true);
+        let macros = compile(&macro_use.path, true, files, true, keep_asm);
         for m in macros {
             if m.ident.name == macro_use.ident.name {
                 parser.add_macro(m);
@@ -79,14 +88,16 @@ fn compile(path: &str, lib: bool, files: &mut Vec<String>, for_macro: bool) -> V
         .status()
         .expect("Failed to execute nasm");
 
-    Command::new("rm")
-        .arg(&out_path)
-        .status()
-        .expect("Failed to execute rm");
+    if !keep_asm {
+        Command::new("rm")
+            .arg(&out_path)
+            .status()
+            .expect("Failed to execute rm");
+    }
 
     for name in &generator.links {
         if !files.contains(&format!("{}.o", name)) {
-            compile(name, true, files, false);
+            compile(name, true, files, false, keep_asm);
         }
     }
 

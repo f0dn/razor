@@ -331,19 +331,19 @@ impl Tokenizer {
     mov r9, 0
     syscall
     mov QWORD [rax], {len2}\n",
-                            len1 = chars.len() * 8,
-                            len2 = chars.len() * 8 + 8
+                            len1 = chars.len() + 9,
+                            len2 = chars.len()
                         );
                         for i in 0..chars.len() {
                             asm.push_str(&format!(
-                                "    mov QWORD [rax + {offset}], {ch}\n",
-                                offset = (i + 1) * 8,
+                                "    mov byte [rax + {offset}], {ch}\n",
+                                offset = i + 8,
                                 ch = chars[i] as u8
                             ));
                         }
                         asm.push_str(&format!(
-                            "    mov QWORD [rax + {offset}], 0\n",
-                            offset = chars.len() * 8 + 8
+                            "    mov byte [rax + {offset}], 0\n",
+                            offset = chars.len() + 8
                         ));
                         self.tokens.push(Token {
                             t_type: Asm,
