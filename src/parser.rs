@@ -35,6 +35,7 @@ pub enum MacroVar {
     Asm(String),
     Ident(Identifier),
     Int(String),
+    Expr(Expr),
 }
 
 pub enum Expr {
@@ -132,6 +133,7 @@ pub enum MacroArg {
     Ident(Identifier),
     Asm(Identifier),
     Int(Identifier),
+    Expr(Identifier),
     Token(TokenType),
     Group(Vec<MacroArg>, TokenType, u32, u32),
 }
@@ -449,6 +451,7 @@ impl<'a> Parser {
             };
             match &self.get_args_from_vec(path)[i] {
                 MacroArg::Group(_, _, _, _) => (),
+                MacroArg::Expr(_) => (),
                 _ => tk = self.consume(),
             }
             match &self.get_args_from_vec(path)[i] {
@@ -477,6 +480,9 @@ impl<'a> Parser {
                         Parser::error("Unexpected {}", &tk);
                     }
                     vars.insert(ident.name.clone(), MacroVar::Int(tk.val.unwrap()));
+                }
+                MacroArg::Expr(ident) => {
+                    vars.insert(ident.name.clone(), MacroVar::Expr(self.parse_expr()));
                 }
                 MacroArg::Token(token) => {
                     if token != &tk.t_type {
@@ -628,6 +634,7 @@ impl<'a> Parser {
                     Asm => MacroArg::Asm(self.parse_ident_name()),
                     Int => MacroArg::Int(self.parse_ident_name()),
                     Var => MacroArg::Ident(self.parse_ident_name()),
+                    Dash => MacroArg::Expr(self.parse_ident_name()),
                     _ => Parser::error("Unexpected {}", &tk),
                 };
                 let tk = self.consume();

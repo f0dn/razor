@@ -61,6 +61,7 @@ impl<'a> Generator<'a> {
                     match macro_var {
                         MacroVar::Asm(s) => s.to_string(),
                         MacroVar::Int(int) => format!("    mov rax, {int}"),
+                        MacroVar::Expr(expr) => self.gen_expr(expr),
                         _ => unreachable!(),
                     }
                 } else {
