@@ -125,6 +125,7 @@ impl Tokenizer {
                 None => break,
             }
         }
+        self.pos -= 1;
         match token.as_str() {
             "return" => self.push_sym(Ret),
             "exit" => self.push_sym(Exit),
@@ -134,11 +135,14 @@ impl Tokenizer {
             "for" => self.push_sym(For),
             "mac" => self.push_sym(Mac),
             "use" => self.push_sym(Use),
-            _ => self.tokens.push(Token {
-                t_type: Var,
-                val: Some(token),
-                line: self.line,
-            }),
+            _ => {
+                self.tokens.push(Token {
+                    t_type: Var,
+                    val: Some(token),
+                    line: self.line,
+                });
+                self.next();
+            }
         }
     }
 

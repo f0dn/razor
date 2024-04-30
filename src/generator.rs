@@ -59,7 +59,7 @@ impl<'a> Generator<'a> {
                 }
                 if let Some(macro_var) = macro_var {
                     match macro_var {
-                        MacroVar::Asm(s) => s.to_string(),
+                        MacroVar::Asm(s) => self.gen_asm(s),
                         MacroVar::Int(int) => format!("    mov rax, {int}"),
                         MacroVar::Expr(expr) => self.gen_expr(expr),
                         _ => unreachable!(),
@@ -165,7 +165,7 @@ impl<'a> Generator<'a> {
                     name = expr_call.name.name
                 )
             }
-            ExprAsm(asm) => asm.to_string(),
+            ExprAsm(asm) => self.gen_asm(asm),
             ExprMacro(expr_macro) => {
                 self.curr_macro_repeat = Some(&expr_macro.cont);
                 let scope = self.gen_repeat(&self.macros[expr_macro.mac].stmts);
@@ -179,6 +179,36 @@ impl<'a> Generator<'a> {
 {expr_string}
 ; Expression End",
         );
+    }
+
+    fn gen_asm(&mut self, asm: &'a String) -> String {
+        let mut split = asm.split('#');
+        let mut string = split.next().unwrap().to_string();
+        for part in split {
+            let mut var = String::new();
+            let mut end = 0;
+            for (i, c) in part.chars().enumerate() {
+                end = i;
+                match c {
+                    '0'..='9' | 'a'..='z' | 'A'..='Z' | '_' => {
+                        var.push(c);
+                    }
+                    _ => break,
+                }
+            }
+            let loc = self.get_loc(&var, Type::Var);
+            match loc {
+                Some(loc) => {
+                    string.push_str(&format!(
+                        "[rsp+{offset}]",
+                        offset = self.stack.len() * 8 - loc - 8
+                    ));
+                }
+                None => panic!("Unknown identifier '{}'", var),
+            }
+            string.push_str(&part[end..]);
+        }
+        return string;
     }
 
     fn gen_repeat(&mut self, stmt_repeat: &'a Vec<Stmt>) -> String {
@@ -204,7 +234,7 @@ impl<'a> Generator<'a> {
                             }
                             StmtFor(stmt_for) => self.gen_for(&stmt_for),
                             StmtAsm(stmt_asm) => {
-                                str.push_str(&stmt_asm.code);
+                                str.push_str(&self.gen_asm(&stmt_asm.code));
                                 String::new()
                             }
                             StmtExpr(stmt_expr) => self.gen_expr(&stmt_expr.expr),
@@ -434,7 +464,7 @@ impl<'a> Generator<'a> {
                 }
                 StmtFor(stmt_for) => self.gen_for(&stmt_for),
                 StmtAsm(stmt_asm) => {
-                    stmt_string.push_str(&stmt_asm.code);
+                    stmt_string.push_str(&self.gen_asm(&stmt_asm.code));
                     String::new()
                 }
                 StmtExpr(stmt_expr) => self.gen_expr(&stmt_expr.expr),
