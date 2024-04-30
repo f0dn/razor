@@ -297,24 +297,19 @@ impl<'a> Generator<'a> {
     }
 
     fn gen_assign_at(&mut self, stmt_assign_at: &'a StmtAssignAt) -> String {
-        let loc = self.get_loc(&self.get_ident(&stmt_assign_at.var).name, Type::Var);
-        match loc {
-            Some(loc) => {
-                return format!(
-                    "; Assign At Start
+        let var = self.gen_expr(&stmt_assign_at.var);
+        return format!(
+            "; Assign At Start
+{var}
+{push}
 {expr}
-    mov rcx, QWORD [rsp+{offset}]
-    mov [rcx], rax
+{pop}
+    mov QWORD [rcx], rax
 ; Assign At End",
-                    expr = self.gen_expr(&stmt_assign_at.expr),
-                    offset = self.stack.len() * 8 - loc - 8
-                );
-            }
-            None => panic!(
-                "Unknown identifier '{}' at line {}",
-                stmt_assign_at.var.name, stmt_assign_at.var.line
-            ),
-        }
+            push = self.push("rax"),
+            expr = self.gen_expr(&stmt_assign_at.expr),
+            pop = self.pop("rcx")
+        );
     }
 
     fn gen_decl(&mut self, stmt_decl: &'a StmtDecl) -> String {

@@ -72,7 +72,7 @@ pub struct StmtAssign {
 }
 
 pub struct StmtAssignAt {
-    pub var: Identifier,
+    pub var: Expr,
     pub expr: Expr,
     pub assign: TokenType,
 }
@@ -227,7 +227,7 @@ parse_fn! {
 
 parse_fn! {
     parse_assign_at -> StmtAssignAt {
-        {At}, parse_ident_name() => var, {Eq} => assign, parse_expr() => expr, {Semi},
+        {At}, parse_expr() => var, {Eq} => assign, parse_expr() => expr, {Semi},
     }
 }
 
