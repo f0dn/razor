@@ -313,12 +313,6 @@ impl<'a> Generator<'a> {
     }
 
     fn gen_decl(&mut self, stmt_decl: &'a StmtDecl) -> String {
-        if self.get_loc(&stmt_decl.var.name, Type::Var).is_some() {
-            panic!(
-                "Variable '{}' redeclared at line {}",
-                stmt_decl.var.name, stmt_decl.var.line
-            );
-        }
         let begin_string = format!(
             "; Declaration Start
 {expr}",
@@ -510,7 +504,7 @@ _start:\n",
 
     fn get_loc(&self, ident: &String, t: Type) -> Option<usize> {
         let func = self.get_func();
-        for i in func..self.stack.len() {
+        for i in (func..self.stack.len()).rev() {
             match &self.stack[i] {
                 Some(id) => {
                     if id.name == ident && &id.t == &t && id.name != "_" {
