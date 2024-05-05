@@ -22,7 +22,7 @@ pub struct Generator<'a> {
     num_jmps: usize,
     macros: &'a Vec<Macro>,
     curr_repeat: usize,
-    curr_macro_repeat: Option<&'a Vec<MacroRepeat>>,
+    curr_macro_repeats: Vec<&'a Vec<MacroRepeat>>,
     ext: String,
     pub links: Vec<&'a String>,
 }
@@ -37,7 +37,7 @@ impl<'a> Generator<'a> {
             num_jmps: 0,
             macros,
             curr_repeat: 0,
-            curr_macro_repeat: None,
+            curr_macro_repeats: Vec::new(),
             ext: String::new(),
             links: Vec::new(),
         };
@@ -167,9 +167,9 @@ impl<'a> Generator<'a> {
             }
             ExprAsm(asm) => self.gen_asm(asm),
             ExprMacro(expr_macro) => {
-                self.curr_macro_repeat = Some(&expr_macro.cont);
+                self.curr_macro_repeats.push(&expr_macro.cont);
                 let scope = self.gen_repeat(&self.macros[expr_macro.mac].stmts);
-                self.curr_macro_repeat = None;
+                self.curr_macro_repeats.pop();
                 return scope;
             }
         };
@@ -213,8 +213,9 @@ impl<'a> Generator<'a> {
 
     fn gen_repeat(&mut self, stmt_repeat: &'a Vec<Stmt>) -> String {
         let mut num_repeats = 0;
-        match self.curr_macro_repeat {
+        match self.curr_macro_repeats.last() {
             Some(repeat) => {
+                let repeat = *repeat;
                 let mut str = String::new();
                 for i in 0..repeat.len() {
                     self.curr_repeat = i;
@@ -240,9 +241,14 @@ impl<'a> Generator<'a> {
                             StmtExpr(stmt_expr) => self.gen_expr(&stmt_expr.expr),
                             StmtAssignAt(stmt_assign_at) => self.gen_assign_at(stmt_assign_at),
                             StmtMRepeat(stmt_repeat) => {
-                                self.curr_macro_repeat = Some(&repeat[i].repeats[num_repeats]);
+                                self.curr_macro_repeats.push(&repeat[i].repeats[num_repeats]);
                                 num_repeats += 1;
-                                self.gen_repeat(&stmt_repeat.stmts)
+                                if num_repeats == repeat[i].repeats.len() {
+                                    num_repeats = 0;
+                                }
+                                let generated_repeat = self.gen_repeat(&stmt_repeat.stmts);
+                                self.curr_macro_repeats.pop();
+                                generated_repeat
                             }
                             StmtUse(stmt_use) => self.gen_use(&stmt_use),
                             StmtBlank => continue,
@@ -250,7 +256,7 @@ impl<'a> Generator<'a> {
                         str.push_str(&stmt);
                     }
                 }
-                self.curr_macro_repeat = Some(repeat);
+                //self.curr_macro_repeats.push(repeat);
                 return str;
             }
             None => panic!("No current macro"),
@@ -259,7 +265,7 @@ impl<'a> Generator<'a> {
 
     fn get_macro_var(&self, ident: &'a str) -> &'a MacroVar {
         let vars: &HashMap<String, MacroVar>;
-        match &self.curr_macro_repeat {
+        match &self.curr_macro_repeats.last() {
             Some(map) => vars = &map[self.curr_repeat].vars,
             None => panic!("No current macro"),
         }
