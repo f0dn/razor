@@ -3,11 +3,19 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::process::Command;
 
-use parser::Macro;
-
+mod TODO;
 mod generator;
 mod parser;
+mod preproc;
 mod tokenizer;
+mod tokenlist;
+
+// STEPS
+// tokenize the file
+// pre-process by finding # tokens - this outputs tokens which replace the # tokens
+// for all the macro imports also tokenize and pre-process those files
+// then parse the file and generate
+// then link all the files together
 
 fn main() {
     let mut args = args();
@@ -34,6 +42,18 @@ fn main() {
     }
 }
 
+fn compile2(path: &str) {
+    let mut file = File::open(path).expect("Could not open file");
+
+    let mut text = String::new();
+    file.read_to_string(&mut text)
+        .expect("Could not read from file");
+    text.push('\n');
+
+    //let mut tokenizer = tokenizer::Tokenizer::new(text);
+    //tokenizer.tokenize();
+}
+
 fn compile(
     path: &str,
     lib: bool,
@@ -48,10 +68,13 @@ fn compile(
         .expect("Could not read from file");
     text.push('\n');
 
-    let mut tokenizer = tokenizer::Tokenizer::new(text);
+    let mut tokenizer = tokenizer::Tokenizer::new(&text);
     tokenizer.tokenize();
 
-    let mut parser = parser::Parser::new(tokenizer.tokens);
+    let mut preproc = preproc::Preproc::new(tokenizer.tokens);
+    preproc.preprocess();
+
+    let mut parser = parser::Parser::new(preproc.tokens);
     let macro_uses = parser.parse_macro_uses();
 
     for macro_use in &macro_uses {

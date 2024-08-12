@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::parser::*;
 use crate::tokenizer::TokenType::*;
 
@@ -20,24 +18,18 @@ pub struct Generator<'a> {
     stack: Vec<Option<Ident<'a>>>,
     scopes: Vec<usize>,
     num_jmps: usize,
-    macros: &'a Vec<Macro>,
-    curr_repeat: usize,
-    curr_macro_repeats: Vec<&'a Vec<MacroRepeat>>,
     ext: String,
     pub links: Vec<&'a String>,
 }
 
 impl<'a> Generator<'a> {
-    pub fn new(macros: &'a Vec<Macro>) -> Generator<'a> {
+    pub fn new() -> Generator<'a> {
         return Generator {
             text: String::from("section .text\n"),
             functions: String::new(),
             stack: Vec::new(),
             scopes: Vec::new(),
             num_jmps: 0,
-            macros,
-            curr_repeat: 0,
-            curr_macro_repeats: Vec::new(),
             ext: String::new(),
             links: Vec::new(),
         };
@@ -49,40 +41,23 @@ impl<'a> Generator<'a> {
             ExprInt(int) => format!("    mov rax, {int}"),
             ExprId(expr_var) => {
                 let mut ident = expr_var;
-                let mut macro_var = None;
-                if expr_var.is_macro {
-                    macro_var = Some(self.get_macro_var(&expr_var.name));
-                    if let Some(MacroVar::Ident(id)) = macro_var {
-                        ident = id;
-                        macro_var = None
-                    }
-                }
-                if let Some(macro_var) = macro_var {
-                    match macro_var {
-                        MacroVar::Asm(s) => self.gen_asm(s),
-                        MacroVar::Int(int) => format!("    mov rax, {int}"),
-                        MacroVar::Expr(expr) => self.gen_expr(expr),
-                        _ => unreachable!(),
-                    }
-                } else {
-                    let loc = self.get_loc(&ident.name, Type::Var);
-                    match loc {
-                        Some(loc) => {
-                            if expr_var.is_ref {
-                                format!(
-                                    "    lea rax, [rsp+{offset}]",
-                                    offset = self.stack.len() * 8 - loc - 8
-                                )
-                            } else {
-                                format!(
-                                    "    mov rax, QWORD [rsp+{offset}]",
-                                    offset = self.stack.len() * 8 - loc - 8
-                                )
-                            }
+                let loc = self.get_loc(&ident.name, Type::Var);
+                match loc {
+                    Some(loc) => {
+                        if expr_var.is_ref {
+                            format!(
+                                "    lea rax, [rsp+{offset}]",
+                                offset = self.stack.len() * 8 - loc - 8
+                            )
+                        } else {
+                            format!(
+                                "    mov rax, QWORD [rsp+{offset}]",
+                                offset = self.stack.len() * 8 - loc - 8
+                            )
                         }
-                        None => {
-                            panic!("Unknown identifier '{}' at line {}", ident.name, ident.line)
-                        }
+                    }
+                    None => {
+                        panic!("Unknown identifier '{}' at line {}", ident.name, ident.line)
                     }
                 }
             }
@@ -142,7 +117,7 @@ impl<'a> Generator<'a> {
     movzx rax, al"
                     }
                     At => "    mov rax, [rcx]",
-                    _ => panic!("Unknown operator: {}", bin_op.op.val()),
+                    _ => panic!("Unknown operator: {}", bin_op.op),
                 };
                 format!(
                     "{lhs}
@@ -166,12 +141,6 @@ impl<'a> Generator<'a> {
                 )
             }
             ExprAsm(asm) => self.gen_asm(asm),
-            ExprMacro(expr_macro) => {
-                self.curr_macro_repeats.push(&expr_macro.cont);
-                let scope = self.gen_repeat(&self.macros[expr_macro.mac].stmts);
-                self.curr_macro_repeats.pop();
-                return scope;
-            }
         };
         return format!(
             "\
@@ -240,16 +209,6 @@ impl<'a> Generator<'a> {
                             }
                             StmtExpr(stmt_expr) => self.gen_expr(&stmt_expr.expr),
                             StmtAssignAt(stmt_assign_at) => self.gen_assign_at(stmt_assign_at),
-                            StmtMRepeat(stmt_repeat) => {
-                                self.curr_macro_repeats.push(&repeat[i].repeats[num_repeats]);
-                                num_repeats += 1;
-                                if num_repeats == repeat[i].repeats.len() {
-                                    num_repeats = 0;
-                                }
-                                let generated_repeat = self.gen_repeat(&stmt_repeat.stmts);
-                                self.curr_macro_repeats.pop();
-                                generated_repeat
-                            }
                             StmtUse(stmt_use) => self.gen_use(&stmt_use),
                             StmtBlank => continue,
                         };
@@ -261,29 +220,6 @@ impl<'a> Generator<'a> {
             }
             None => panic!("No current macro"),
         }
-    }
-
-    fn get_macro_var(&self, ident: &'a str) -> &'a MacroVar {
-        let vars: &HashMap<String, MacroVar>;
-        match &self.curr_macro_repeats.last() {
-            Some(map) => vars = &map[self.curr_repeat].vars,
-            None => panic!("No current macro"),
-        }
-        match vars.get(ident) {
-            Some(var) => return var,
-            None => panic!("Unknown macro variable '{}'", ident),
-        }
-    }
-
-    fn get_ident(&self, ident: &'a Identifier) -> &'a Identifier {
-        if !ident.is_macro {
-            return ident;
-        }
-        let macro_var = self.get_macro_var(&ident.name);
-        match &macro_var {
-            MacroVar::Ident(ident) => return ident,
-            _ => panic!("Expected identifier"),
-        };
     }
 
     fn gen_if(&mut self, stmt_if: &'a StmtIf) -> String {
@@ -475,7 +411,6 @@ impl<'a> Generator<'a> {
                 }
                 StmtExpr(stmt_expr) => self.gen_expr(&stmt_expr.expr),
                 StmtAssignAt(stmt_assign_at) => self.gen_assign_at(stmt_assign_at),
-                StmtMRepeat(stmt_repeat) => self.gen_repeat(&stmt_repeat.stmts),
                 StmtUse(stmt_use) => self.gen_use(stmt_use),
                 StmtBlank => continue,
             };

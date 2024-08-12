@@ -1,10 +1,15 @@
+use core::fmt;
+use std::{iter::Peekable, str::Chars};
+
+use crate::tokenlist::TokenList;
+
+#[derive(Clone)]
 pub struct Token {
     pub t_type: TokenType,
-    pub val: Option<String>,
     pub line: usize,
 }
 
-#[derive(PartialEq, Eq, Hash, Copy, Clone)]
+#[derive(PartialEq, Eq, Hash, Clone)]
 pub enum TokenType {
     // Keywords
     Ret,
@@ -38,23 +43,24 @@ pub enum TokenType {
     Dot,
     Lt,
     Gt,
+    QMark,
 
     // Literals
-    Int,
-    Asm,
-    Path,
+    Int(String),
+    Asm(String),
+    Path(String),
 
     // Identifiers
-    Var,
+    Var(String),
 
     // End of file
     Eof,
 }
 
-impl TokenType {
-    pub fn val(&self) -> &str {
+impl fmt::Display for TokenType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use TokenType::*;
-        match self {
+        let str = match self {
             Ret => "return",
             Exit => "exit",
             Decl => "decl",
@@ -84,29 +90,29 @@ impl TokenType {
             Dot => ".",
             Lt => "<",
             Gt => ">",
-            Int => "int",
-            Asm => "asm",
-            Path => "path",
-            Var => "variable",
-            Eof => "EOF",
-        }
+            QMark => "?",
+            Int(val) => val,
+            Asm(val) => val,
+            Path(val) => val,
+            Var(val) => val,
+            Eof => "end of file",
+        };
+        write!(f, "{}", str)
     }
 }
 
-pub struct Tokenizer {
-    text: String,
-    pos: u32,
+pub struct Tokenizer<'a> {
+    chars: Peekable<Chars<'a>>,
     line: usize,
-    pub tokens: Vec<Token>,
+    pub tokens: TokenList,
 }
 
-impl Tokenizer {
-    pub fn new(text: String) -> Tokenizer {
+impl<'a> Tokenizer<'a> {
+    pub fn new(text: &'a String) -> Tokenizer<'a> {
         return Tokenizer {
-            text,
-            pos: 0,
+            chars: text.chars().peekable(),
             line: 1,
-            tokens: Vec::new(),
+            tokens: TokenList::new(),
         };
     }
 
@@ -125,24 +131,16 @@ impl Tokenizer {
                 None => break,
             }
         }
-        self.pos -= 1;
         match token.as_str() {
-            "return" => self.push_sym(Ret),
-            "exit" => self.push_sym(Exit),
-            "decl" => self.push_sym(Decl),
-            "if" => self.push_sym(If),
-            "func" => self.push_sym(Func),
-            "for" => self.push_sym(For),
-            "mac" => self.push_sym(Mac),
-            "use" => self.push_sym(Use),
-            _ => {
-                self.tokens.push(Token {
-                    t_type: Var,
-                    val: Some(token),
-                    line: self.line,
-                });
-                self.next();
-            }
+            "return" => self.push_token(Ret),
+            "exit" => self.push_token(Exit),
+            "decl" => self.push_token(Decl),
+            "if" => self.push_token(If),
+            "func" => self.push_token(Func),
+            "for" => self.push_token(For),
+            "mac" => self.push_token(Mac),
+            "use" => self.push_token(Use),
+            _ => self.push_token(Var(token)),
         }
     }
 
@@ -161,11 +159,36 @@ impl Tokenizer {
                 None => break,
             }
         }
-        self.tokens.push(Token {
-            t_type: Int,
-            val: Some(val),
-            line: self.line,
-        });
+        self.push_token(Int(val));
+    }
+
+    fn tokenize_single_or_double(&mut self, ch: char, single: TokenType, double: TokenType) {
+        self.next();
+        if self.peek() == Some(ch) {
+            self.next();
+            self.push_token(double);
+        } else {
+            self.push_token(single);
+        }
+    }
+
+    fn tokenize_double(&mut self, ch: char, double: TokenType) {
+        self.next();
+        if self.peek() == Some(ch) {
+            self.next();
+            self.push_token(double);
+        } else {
+            panic!("Unexpected '{}' at line {}", ch, self.line);
+        }
+    }
+
+    fn tokenize_comment(&mut self) {
+        loop {
+            match self.peek() {
+                Some('\n') | Some('\r') | None => break,
+                Some(_) => self.next(),
+            }
+        }
     }
 
     pub fn tokenize(&mut self) {
@@ -173,72 +196,41 @@ impl Tokenizer {
         loop {
             match self.peek() {
                 Some(ch) => match ch {
-                    ';' => self.push_sym(Semi),
-                    '=' => {
-                        self.next();
-                        match self.peek() {
-                            Some('=') => self.push_sym(DEq),
-                            _ => self.push_sym(Eq),
-                        }
-                    }
-                    '|' => {
-                        self.next();
-                        match self.peek() {
-                            Some('|') => self.push_sym(DPipe),
-                            _ => panic!("Unexpected '|' at line {}", self.line),
-                        }
-                    }
-                    '&' => {
-                        self.next();
-                        match self.peek() {
-                            Some('&') => self.push_sym(DAmp),
-                            _ => {
-                                self.push_sym(Amp);
-                                self.pos -= 1
-                            }
-                        }
-                    }
-                    '#' => self.push_sym(Hash),
-                    '*' => self.push_sym(Star),
-                    '+' => self.push_sym(Plus),
-                    '-' => self.push_sym(Dash),
+                    '>' => self.push_token(Gt),
+                    '.' => self.push_token(Dot),
+                    '{' => self.push_token(LBr),
+                    '}' => self.push_token(RBr),
+                    '%' => self.push_token(Per),
+                    ';' => self.push_token(Semi),
+                    '#' => self.push_token(Hash),
+                    '*' => self.push_token(Star),
+                    '+' => self.push_token(Plus),
+                    '-' => self.push_token(Dash),
+                    '(' => self.push_token(LPar),
+                    ')' => self.push_token(RPar),
+                    '?' => self.push_token(QMark),
+                    '|' => self.tokenize_double('|', DPipe),
+                    '=' => self.tokenize_single_or_double('=', Eq, DEq),
+                    '&' => self.tokenize_single_or_double('&', Amp, DAmp),
                     '/' => {
                         self.next();
                         match self.peek() {
-                            Some('/') => loop {
-                                match self.peek() {
-                                    Some('\n') | Some('\r') => break,
-                                    Some(_) => self.next(),
-                                    None => break,
-                                }
-                            },
-                            _ => self.push_sym(Slash),
+                            Some('/') => self.tokenize_comment(),
+                            _ => self.push_token(Slash),
                         }
                     }
-                    '%' => self.push_sym(Per),
                     '!' => {
-                        self.tokens.push(Token {
-                            t_type: Int,
-                            val: Some(String::from("0")),
-                            line: self.line,
-                        });
-                        self.push_sym(Ex);
+                        // TODO this is horrible
+                        self.push_token(Int(String::from("0")));
+                        self.push_token(Ex);
                     }
-                    '(' => self.push_sym(LPar),
-                    ')' => self.push_sym(RPar),
-                    '{' => self.push_sym(LBr),
-                    '}' => self.push_sym(RBr),
                     '@' => {
-                        self.tokens.push(Token {
-                            t_type: Int,
-                            val: Some(String::from("0")),
-                            line: self.line,
-                        });
-                        self.push_sym(At);
+                        // TODO this is horrible
+                        self.push_token(Int(String::from("0")));
+                        self.push_token(At);
                     }
-                    '.' => self.push_sym(Dot),
                     '<' => {
-                        if self.tokens.last().unwrap().t_type == Use {
+                        if self.tokens.peek().unwrap().t_type == Use {
                             self.next();
                             let mut path = String::new();
                             loop {
@@ -257,20 +249,10 @@ impl Tokenizer {
                                     None => panic!("Unexpected EOF at line {}", self.line),
                                 }
                             }
-                            self.tokens.push(Token {
-                                t_type: Path,
-                                val: Some(path),
-                                line: self.line,
-                            });
+                            self.push_token(Path(path));
                         } else {
-                            self.push_sym(Lt);
+                            self.push_token(Lt);
                         }
-                    }
-                    '>' => self.push_sym(Gt),
-                    ' ' => self.next(),
-                    '\n' | '\r' => {
-                        self.next();
-                        self.line += 1;
                     }
                     '`' => {
                         self.next();
@@ -291,11 +273,7 @@ impl Tokenizer {
                                 None => panic!("Unexpected EOF at line {}", self.line),
                             }
                         }
-                        self.tokens.push(Token {
-                            t_type: Asm,
-                            val: Some(asm),
-                            line: self.line,
-                        });
+                        self.push_token(Asm(asm));
                     }
                     '"' => {
                         self.next();
@@ -349,38 +327,37 @@ impl Tokenizer {
                             "    mov byte [rax + {offset}], 0\n",
                             offset = chars.len() + 8
                         ));
-                        self.tokens.push(Token {
-                            t_type: Asm,
-                            val: Some(asm),
-                            line: self.line,
-                        });
+                        self.push_token(Asm(asm));
+                    }
+                    ' ' => self.next(),
+                    '\n' | '\r' => {
+                        self.next();
+                        self.line += 1;
                     }
                     'a'..='z' | 'A'..='Z' | '_' => self.tokenize_word(),
                     '0'..='9' => self.tokenize_num(),
                     _ => panic!("Unexpected '{}' at line {}", ch, self.line),
                 },
                 None => {
-                    self.push_sym(Eof);
+                    self.push_token(Eof);
                     break;
                 }
             }
         }
     }
 
-    fn peek(&self) -> Option<char> {
-        return self.text.chars().nth(self.pos as usize);
+    fn peek(&mut self) -> Option<char> {
+        return self.chars.peek().copied();
     }
 
     fn next(&mut self) {
-        self.pos += 1;
+        self.chars.next().unwrap();
     }
 
-    fn push_sym(&mut self, t_type: TokenType) {
+    fn push_token(&mut self, t_type: TokenType) {
         self.tokens.push(Token {
             t_type,
-            val: None,
             line: self.line,
         });
-        self.next();
     }
 }
