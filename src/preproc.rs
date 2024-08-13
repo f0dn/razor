@@ -21,8 +21,12 @@ MACRO_ARG     : { token id } or
                 ( MACRO_ARG* )[?*+]
 */
 
-struct Macro {
-    name: String,
+pub struct MacroUse {
+    pub id: String,
+    pub path: String,
+}
+
+pub struct Macro {
     args: Vec<MacroArg>,
     body: Vec<MacroBody>,
 }
@@ -52,8 +56,8 @@ enum RepeatType {
 }
 
 pub struct Preproc {
-    pub tokens: TokenList,
-    macros: Vec<Macro>,
+    tokens: TokenList,
+    pub macros: HashMap<String, Macro>,
 }
 
 impl Preproc {
@@ -61,7 +65,7 @@ impl Preproc {
         tokens.reset();
         return Preproc {
             tokens,
-            macros: Vec::new(),
+            macros: HashMap::new(),
         };
     }
 
@@ -142,7 +146,7 @@ impl Preproc {
 
         let body = self.process_macro_body();
 
-        self.macros.push(Macro { name, args, body });
+        self.macros.insert(name, Macro { args, body });
     }
 
     fn process_macro_inner(&mut self, args: &Vec<MacroArg>) -> Option<MacroRepeat> {
@@ -211,26 +215,72 @@ impl Preproc {
         }
     }
 
-    fn process_macro_call(&mut self, name: String) {
-        let mac = self.macros.swap_remove(
-            self.macros
-                .iter()
-                .position(|m| m.name == name)
-                .expect("Macro not found"),
-        );
+    fn process_macro_call_with_extra(
+        &mut self,
+        name: String,
+        extra_macros: &HashMap<&String, &Macro>,
+    ) {
+        if let Some(mac) = self.macros.remove(&name) {
+            self.process_macro_call(&mac.body, &mac.args);
+            self.macros.insert(name, mac);
+        } else {
+            let mac = extra_macros.get(&name).expect("Macro not found");
+            self.process_macro_call(&mac.body, &mac.args);
+        }
+    }
+
+    fn process_macro_call(&mut self, body: &Vec<MacroBody>, args: &Vec<MacroArg>) {
         self.consume_type(TokenType::Hash);
         self.consume_type(TokenType::LPar);
 
-        let vars = self.process_macro_inner(&mac.args).unwrap();
+        let vars = self.process_macro_inner(args).unwrap();
 
         self.consume_type(TokenType::RPar);
 
-        self.insert_macro_body(&mac.body, &vars);
-
-        self.macros.push(mac);
+        self.insert_macro_body(body, &vars);
     }
 
-    pub fn preprocess(&mut self) {
+    fn process_macro_use(&mut self) -> MacroUse {
+        self.consume_type(TokenType::Hash);
+        self.consume_type(TokenType::Use);
+
+        let path = match self.consume().t_type {
+            TokenType::Path(path) => path,
+            _ => panic!("Expected path"),
+        };
+
+        self.consume_type(TokenType::Dot);
+
+        let id = match self.consume().t_type {
+            TokenType::Var(id) => id,
+            _ => panic!("Expected identifier"),
+        };
+
+        self.consume_type(TokenType::Semi);
+
+        return MacroUse { id, path };
+    }
+
+    pub fn preprocess_uses(&mut self) -> Vec<MacroUse> {
+        let mut uses = Vec::new();
+
+        while let Some(token) = self.tokens.next() {
+            match token.t_type {
+                TokenType::Hash => {
+                    if self.peek_type(&TokenType::Use) {
+                        uses.push(self.process_macro_use());
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        self.tokens.reset();
+
+        return uses;
+    }
+
+    pub fn preprocess_macros(&mut self) {
         while let Some(token) = self.tokens.next() {
             match token.t_type {
                 TokenType::Mac => self.process_macro_def(),
@@ -239,12 +289,14 @@ impl Preproc {
         }
 
         self.tokens.reset();
+    }
 
+    pub fn preprocess_macro_calls(&mut self, macros: &HashMap<&String, &Macro>) {
         while let Some(token) = self.tokens.next() {
             match token.t_type {
                 TokenType::Var(name) => {
                     if self.peek_type(&TokenType::Hash) {
-                        self.process_macro_call(name);
+                        self.process_macro_call_with_extra(name, macros);
                     }
                 }
                 _ => {}
@@ -252,6 +304,10 @@ impl Preproc {
         }
 
         // TODO make sure we can have macros inside macros
+    }
+
+    pub fn take_tokens(&mut self) -> TokenList {
+        return std::mem::replace(&mut self.tokens, TokenList::new());
     }
 
     fn peek(&self) -> Option<&Token> {

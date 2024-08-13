@@ -39,12 +39,11 @@ impl<'a> Generator<'a> {
         use Expr::*;
         let expr_string = match expr {
             ExprInt(int) => format!("    mov rax, {int}"),
-            ExprId(expr_var) => {
-                let mut ident = expr_var;
+            ExprId(ident) => {
                 let loc = self.get_loc(&ident.name, Type::Var);
                 match loc {
                     Some(loc) => {
-                        if expr_var.is_ref {
+                        if ident.is_ref {
                             format!(
                                 "    lea rax, [rsp+{offset}]",
                                 offset = self.stack.len() * 8 - loc - 8
@@ -180,48 +179,6 @@ impl<'a> Generator<'a> {
         return string;
     }
 
-    fn gen_repeat(&mut self, stmt_repeat: &'a Vec<Stmt>) -> String {
-        let mut num_repeats = 0;
-        match self.curr_macro_repeats.last() {
-            Some(repeat) => {
-                let repeat = *repeat;
-                let mut str = String::new();
-                for i in 0..repeat.len() {
-                    self.curr_repeat = i;
-                    use Stmt::*;
-                    for stmt in stmt_repeat {
-                        str.push('\n');
-                        let stmt = match stmt {
-                            StmtRet(stmt_ret) => self.gen_ret(stmt_ret),
-                            StmtExit(stmt_exit) => self.gen_exit(stmt_exit),
-                            StmtDecl(stmt_decl) => self.gen_decl(stmt_decl),
-                            StmtIf(stmt_if) => self.gen_if(stmt_if),
-                            StmtAssign(stmt_assign) => self.gen_assign(stmt_assign),
-                            StmtFunc(stmt_func) => {
-                                let func = self.gen_func(stmt_func);
-                                self.functions.push_str(&func);
-                                String::new()
-                            }
-                            StmtFor(stmt_for) => self.gen_for(&stmt_for),
-                            StmtAsm(stmt_asm) => {
-                                str.push_str(&self.gen_asm(&stmt_asm.code));
-                                String::new()
-                            }
-                            StmtExpr(stmt_expr) => self.gen_expr(&stmt_expr.expr),
-                            StmtAssignAt(stmt_assign_at) => self.gen_assign_at(stmt_assign_at),
-                            StmtUse(stmt_use) => self.gen_use(&stmt_use),
-                            StmtBlank => continue,
-                        };
-                        str.push_str(&stmt);
-                    }
-                }
-                //self.curr_macro_repeats.push(repeat);
-                return str;
-            }
-            None => panic!("No current macro"),
-        }
-    }
-
     fn gen_if(&mut self, stmt_if: &'a StmtIf) -> String {
         let expr = self.gen_expr(&stmt_if.expr);
         let scope = self.gen_scope(&stmt_if.stmts);
@@ -249,7 +206,7 @@ impl<'a> Generator<'a> {
     }
 
     fn gen_assign(&mut self, stmt_assign: &'a StmtAssign) -> String {
-        let loc = self.get_loc(&self.get_ident(&stmt_assign.var).name, Type::Var);
+        let loc = self.get_loc(&stmt_assign.var.name, Type::Var);
         match loc {
             Some(loc) => {
                 return format!(
@@ -291,7 +248,7 @@ impl<'a> Generator<'a> {
             expr = self.gen_expr(&stmt_decl.expr)
         );
         self.stack.push(Some(Ident {
-            name: &self.get_ident(&stmt_decl.var).name,
+            name: &stmt_decl.var.name,
             t: Type::Var,
         }));
         return format!(
@@ -325,17 +282,15 @@ impl<'a> Generator<'a> {
     }
 
     fn gen_func(&mut self, stmt_func: &'a StmtFunc) -> String {
-        self.ext.push_str(&format!(
-            "global {}\n",
-            self.get_ident(&stmt_func.ident).name
-        ));
+        self.ext
+            .push_str(&format!("global {}\n", &stmt_func.ident.name));
         let begin_string = format!(
             "; Function Start
 {name}:",
-            name = self.get_ident(&stmt_func.ident).name
+            name = &stmt_func.ident.name
         );
         self.stack.push(Some(Ident {
-            name: &self.get_ident(&stmt_func.ident).name,
+            name: &stmt_func.ident.name,
             t: Type::Func,
         }));
         self.stack.push(Some(Ident {

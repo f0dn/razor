@@ -311,11 +311,6 @@ impl<'a> Parser {
 
                 match &tk.t_type {
                     Var(val) => {
-                        if self.peek().t_type == Hash {
-                            self.tokens.push(tk);
-                            return self.parse_macro_call();
-                        }
-
                         return ExprId(Identifier {
                             name: val.to_string(),
                             line: tk.line,
@@ -400,11 +395,6 @@ impl<'a> Parser {
                     expr: self.parse_expr(),
                 });
             }
-            Mac => {
-                let mac = self.parse_macro();
-                self.macros.push(mac);
-                return StmtBlank;
-            }
             Use => return StmtUse(self.parse_use()),
             _ => {
                 return StmtExpr(crate::parser::StmtExpr {
@@ -430,28 +420,12 @@ impl<'a> Parser {
         self.parse_tree.stmts = self.parse_mult(Eof);
     }
 
-    pub fn parse_macro_uses(&mut self) -> Vec<StmtUse> {
-        let mut uses = Vec::new();
-        loop {
-            match self.peek().t_type {
-                Hash => {
-                    self.consume();
-                    uses.push(self.parse_use());
-                }
-                _ => break,
-            }
-        }
-        return uses;
-    }
-
     fn peek(&self) -> &Token {
         return self.tokens.peek().unwrap();
     }
 
     fn peek_mult(&self, n: usize) -> &Token {
-        // FIXME this is broken
-        return self.peek();
-        //return self.tokens.get(self.tokens.len() - n).unwrap();
+        return self.tokens.peek_mult(n).unwrap();
     }
 
     fn consume(&mut self) -> Token {

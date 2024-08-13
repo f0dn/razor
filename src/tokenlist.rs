@@ -36,6 +36,10 @@ impl TokenList {
         }
     }
 
+    pub fn peek_mult(&self, n: usize) -> Option<&Token> {
+        return self.second.iter().nth(n);
+    }
+
     pub fn push(&mut self, token: Token) {
         self.second.push_back(token);
     }
