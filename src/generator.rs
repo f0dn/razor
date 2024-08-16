@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::parser::*;
 use crate::tokenizer::TokenType::*;
 
@@ -18,7 +20,8 @@ pub struct Generator<'a> {
     stack: Vec<Option<Ident<'a>>>,
     scopes: Vec<usize>,
     num_jmps: usize,
-    ext: String,
+    ext: HashSet<String>,
+    global: String,
     pub links: Vec<&'a String>,
 }
 
@@ -30,7 +33,8 @@ impl<'a> Generator<'a> {
             stack: Vec::new(),
             scopes: Vec::new(),
             num_jmps: 0,
-            ext: String::new(),
+            ext: HashSet::new(),
+            global: String::new(),
             links: Vec::new(),
         };
     }
@@ -132,6 +136,7 @@ impl<'a> Generator<'a> {
                 )
             }
             ExprCall(expr_call) => {
+                self.ext.insert(expr_call.name.name.clone());
                 format!(
                     "{call}
     call {name}",
@@ -140,6 +145,7 @@ impl<'a> Generator<'a> {
                 )
             }
             ExprAsm(asm) => self.gen_asm(asm),
+            ExprStmts(stmts) => self.gen_scope(stmts),
         };
         return format!(
             "\
@@ -197,8 +203,7 @@ impl<'a> Generator<'a> {
     }
 
     fn gen_use(&mut self, stmt_use: &'a StmtUse) -> String {
-        self.ext
-            .push_str(&format!("extern {}\n", stmt_use.ident.name));
+        self.ext.insert(stmt_use.ident.name.clone());
         if !self.links.contains(&&stmt_use.path) {
             self.links.push(&stmt_use.path);
         }
@@ -282,7 +287,7 @@ impl<'a> Generator<'a> {
     }
 
     fn gen_func(&mut self, stmt_func: &'a StmtFunc) -> String {
-        self.ext
+        self.global
             .push_str(&format!("global {}\n", &stmt_func.ident.name));
         let begin_string = format!(
             "; Function Start
@@ -391,7 +396,10 @@ add rsp, {offset}
 
     pub fn gen(&mut self, prog: &'a Prog, lib: bool) {
         let scope = self.gen_scope(&prog.stmts);
-        self.text.push_str(&self.ext);
+        self.text.push_str(&self.global);
+        for ext in &self.ext {
+            self.text.push_str(&format!("extern {}\n", ext));
+        }
         self.text.push('\n');
         if !lib {
             self.text.push_str(

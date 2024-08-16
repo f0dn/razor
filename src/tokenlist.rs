@@ -1,10 +1,33 @@
-use std::collections::LinkedList;
+use std::{collections::LinkedList, fmt::Debug};
 
 use crate::tokenizer::Token;
 
 pub struct TokenList {
     first: LinkedList<Token>,
     second: LinkedList<Token>,
+}
+
+impl Debug for TokenList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut last_line = 0;
+        for token in self.first.iter() {
+            if token.line != last_line {
+                write!(f, "\n")?;
+                last_line = token.line;
+            }
+            write!(f, "{:?} ", token)?;
+        }
+
+        for token in self.second.iter() {
+            if token.line != last_line {
+                write!(f, "\n")?;
+                last_line = token.line;
+            }
+            write!(f, "{:?} ", token)?;
+        }
+
+        return Ok(());
+    }
 }
 
 impl Iterator for TokenList {
@@ -29,23 +52,40 @@ impl TokenList {
         };
     }
 
-    pub fn peek(&self) -> Option<&Token> {
-        match &self.second.front() {
-            Some(token) => Some(&token),
-            None => None,
+    pub fn back(&mut self, n: usize) {
+        for _ in 0..n {
+            if let Some(token) = self.first.pop_back() {
+                self.second.push_front(token);
+            }
         }
     }
 
+    pub fn peek(&self) -> Option<&Token> {
+        return self.second.front();
+    }
+
+    pub fn peek_back(&self) -> Option<&Token> {
+        return self.first.back();
+    }
+
     pub fn peek_mult(&self, n: usize) -> Option<&Token> {
-        return self.second.iter().nth(n);
+        return self.second.iter().nth(n - 1);
     }
 
     pub fn push(&mut self, token: Token) {
-        self.second.push_back(token);
+        self.first.push_back(token);
+    }
+
+    pub fn push_front(&mut self, token: Token) {
+        self.second.push_front(token);
     }
 
     pub fn remove(&mut self) -> Token {
         return self.second.pop_front().unwrap();
+    }
+
+    pub fn remove_back(&mut self) -> Token {
+        return self.first.pop_back().unwrap();
     }
 
     pub fn reset(&mut self) {

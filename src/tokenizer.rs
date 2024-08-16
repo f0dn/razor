@@ -9,7 +9,13 @@ pub struct Token {
     pub line: usize,
 }
 
-#[derive(PartialEq, Eq, Hash, Clone)]
+impl fmt::Debug for Token {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.t_type)
+    }
+}
+
+#[derive(Hash, Clone)]
 pub enum TokenType {
     // Keywords
     Ret,
@@ -57,47 +63,58 @@ pub enum TokenType {
     Eof,
 }
 
+impl PartialEq for TokenType {
+    fn eq(&self, other: &Self) -> bool {
+        return std::mem::discriminant(self) == std::mem::discriminant(other);
+    }
+}
+
+impl Eq for TokenType {}
+
 impl fmt::Display for TokenType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use TokenType::*;
-        let str = match self {
-            Ret => "return",
-            Exit => "exit",
-            Decl => "decl",
-            If => "if",
-            Func => "func",
-            For => "for",
-            Mac => "mac",
-            Use => "use",
-            Semi => ";",
-            Eq => "=",
-            DEq => "==",
-            DPipe => "||",
-            DAmp => "&&",
-            Star => "*",
-            Plus => "+",
-            Dash => "-",
-            Slash => "/",
-            Per => "%",
-            Ex => "!",
-            LPar => "(",
-            RPar => ")",
-            LBr => "{",
-            RBr => "}",
-            At => "@",
-            Amp => "&",
-            Hash => "#",
-            Dot => ".",
-            Lt => "<",
-            Gt => ">",
-            QMark => "?",
-            Int(val) => val,
-            Asm(val) => val,
-            Path(val) => val,
-            Var(val) => val,
-            Eof => "end of file",
-        };
-        write!(f, "{}", str)
+        write!(
+            f,
+            "{}",
+            match self {
+                Ret => "return",
+                Exit => "exit",
+                Decl => "decl",
+                If => "if",
+                Func => "func",
+                For => "for",
+                Mac => "mac",
+                Use => "use",
+                Semi => ";",
+                Eq => "=",
+                DEq => "==",
+                DPipe => "||",
+                DAmp => "&&",
+                Star => "*",
+                Plus => "+",
+                Dash => "-",
+                Slash => "/",
+                Per => "%",
+                Ex => "!",
+                LPar => "(",
+                RPar => ")",
+                LBr => "{",
+                RBr => "}",
+                At => "@",
+                Amp => "&",
+                Hash => "#",
+                Dot => ".",
+                Lt => "<",
+                Gt => ">",
+                QMark => "?",
+                Int(val) => val,
+                Asm(val) => return write!(f, "`{}`", val),
+                Path(val) => return write!(f, "<{}>", val),
+                Var(val) => val,
+                Eof => "end of file",
+            }
+        )
     }
 }
 
@@ -196,19 +213,19 @@ impl<'a> Tokenizer<'a> {
         loop {
             match self.peek() {
                 Some(ch) => match ch {
-                    '>' => self.push_token(Gt),
-                    '.' => self.push_token(Dot),
-                    '{' => self.push_token(LBr),
-                    '}' => self.push_token(RBr),
-                    '%' => self.push_token(Per),
-                    ';' => self.push_token(Semi),
-                    '#' => self.push_token(Hash),
-                    '*' => self.push_token(Star),
-                    '+' => self.push_token(Plus),
-                    '-' => self.push_token(Dash),
-                    '(' => self.push_token(LPar),
-                    ')' => self.push_token(RPar),
-                    '?' => self.push_token(QMark),
+                    '>' => self.push_and_next(Gt),
+                    '.' => self.push_and_next(Dot),
+                    '{' => self.push_and_next(LBr),
+                    '}' => self.push_and_next(RBr),
+                    '%' => self.push_and_next(Per),
+                    ';' => self.push_and_next(Semi),
+                    '#' => self.push_and_next(Hash),
+                    '*' => self.push_and_next(Star),
+                    '+' => self.push_and_next(Plus),
+                    '-' => self.push_and_next(Dash),
+                    '(' => self.push_and_next(LPar),
+                    ')' => self.push_and_next(RPar),
+                    '?' => self.push_and_next(QMark),
                     '|' => self.tokenize_double('|', DPipe),
                     '=' => self.tokenize_single_or_double('=', Eq, DEq),
                     '&' => self.tokenize_single_or_double('&', Amp, DAmp),
@@ -222,16 +239,17 @@ impl<'a> Tokenizer<'a> {
                     '!' => {
                         // TODO this is horrible
                         self.push_token(Int(String::from("0")));
-                        self.push_token(Ex);
+                        self.push_and_next(Ex);
                     }
                     '@' => {
                         // TODO this is horrible
                         self.push_token(Int(String::from("0")));
-                        self.push_token(At);
+                        self.push_and_next(At);
                     }
+                    // TODO fix all these
                     '<' => {
-                        if self.tokens.peek().unwrap().t_type == Use {
-                            self.next();
+                        self.next();
+                        if self.tokens.peek_back().unwrap().t_type == Use {
                             let mut path = String::new();
                             loop {
                                 match self.peek() {
@@ -352,6 +370,11 @@ impl<'a> Tokenizer<'a> {
 
     fn next(&mut self) {
         self.chars.next().unwrap();
+    }
+
+    fn push_and_next(&mut self, t_type: TokenType) {
+        self.push_token(t_type);
+        self.next();
     }
 
     fn push_token(&mut self, t_type: TokenType) {

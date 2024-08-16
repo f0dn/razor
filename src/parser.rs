@@ -27,6 +27,7 @@ pub enum Expr {
     ExprCall(Box<ExprCall>),
     ExprBinOp(BinOp),
     ExprAsm(String),
+    ExprStmts(Vec<Stmt>),
 }
 
 pub struct StmtIf {
@@ -252,9 +253,6 @@ impl<'a> Parser {
     }
 
     fn parse_ident_name(&mut self) -> Identifier {
-        if self.peek().t_type == Hash {
-            self.consume();
-        }
         let tk = self.consume();
         match tk.t_type {
             Var(name) => {
@@ -283,9 +281,9 @@ impl<'a> Parser {
         let mut tk = self.consume();
         match tk.t_type {
             Int(val) => return ExprInt(val),
-            Var(_) | Amp | Hash => {
+            Var(_) | Amp => {
                 if self.peek().t_type == LPar {
-                    self.tokens.push(tk);
+                    self.tokens.push_front(tk);
                     return ExprCall(Box::new(self.parse_call()));
                 }
 
@@ -293,20 +291,6 @@ impl<'a> Parser {
                 if tk.t_type == Amp {
                     is_ref = true;
                     tk = self.consume();
-                }
-
-                if tk.t_type == Hash {
-                    tk = self.consume();
-                    match tk.t_type {
-                        Var(val) => {
-                            return ExprId(Identifier {
-                                name: val,
-                                line: tk.line,
-                                is_ref,
-                            })
-                        }
-                        _ => Parser::error("Unexpected {}", &tk),
-                    }
                 }
 
                 match &tk.t_type {
@@ -328,6 +312,11 @@ impl<'a> Parser {
                     RPar => return expr,
                     _ => Parser::error("Missing ')'", &tk),
                 }
+            }
+            LBr => {
+                let stmts = self.parse_mult(RBr);
+                self.consume();
+                return ExprStmts(stmts);
             }
             _ => Parser::error("Unexpected {}", &tk),
         }

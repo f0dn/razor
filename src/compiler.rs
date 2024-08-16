@@ -25,8 +25,7 @@ impl FileState {
         let mut tokenizer = Tokenizer::new(&text);
         tokenizer.tokenize();
 
-        let mut preproc = Preproc::new(tokenizer.tokens);
-        preproc.preprocess_macros();
+        let preproc = Preproc::new(tokenizer.tokens);
 
         return FileState {
             preproc,
@@ -48,13 +47,43 @@ impl Compiler {
 
     fn compile_for_macros(&mut self, path: &String) {
         if !self.files.contains_key(path) {
-            self.files.insert(path.clone(), FileState::new(&path));
+            let mut file_state = FileState::new(&path);
+
+            let mut macros = HashMap::new();
+
+            let macro_uses = file_state.preproc.preprocess_uses();
+
+            for macro_use in &macro_uses {
+                self.compile_for_macros(&macro_use.path);
+            }
+
+            for macro_use in &macro_uses {
+                if let Some(mac) = self
+                    .files
+                    .get(&macro_use.path)
+                    .unwrap()
+                    .preproc
+                    .macros
+                    .get(&macro_use.id)
+                {
+                    macros.insert(&macro_use.id, mac);
+                }
+            }
+
+            file_state.preproc.preprocess_macro_calls(&macros);
+
+            file_state.preproc.preprocess_macros();
+
+            file_state.preproc.preprocess_macro_calls(&macros);
+
+            self.files.insert(path.clone(), file_state);
         }
     }
 
     fn compile_full(&mut self, path: &String, is_main: bool) {
         let mut file_state = if let Some(file_state) = self.files.remove(path) {
             if file_state.compiled_text.is_some() {
+                self.files.insert(path.clone(), file_state);
                 return;
             } else {
                 file_state
@@ -70,17 +99,21 @@ impl Compiler {
             self.compile_for_macros(&macro_use.path);
         }
         for macro_use in &macro_uses {
-            macros.insert(
-                &macro_use.path,
-                self.files
-                    .get(&macro_use.path)
-                    .unwrap()
-                    .preproc
-                    .macros
-                    .get(&macro_use.id)
-                    .unwrap(),
-            );
+            if let Some(mac) = self
+                .files
+                .get(&macro_use.path)
+                .unwrap()
+                .preproc
+                .macros
+                .get(&macro_use.id)
+            {
+                macros.insert(&macro_use.id, mac);
+            }
         }
+
+        file_state.preproc.preprocess_macro_calls(&macros);
+
+        file_state.preproc.preprocess_macros();
 
         file_state.preproc.preprocess_macro_calls(&macros);
 
@@ -88,7 +121,7 @@ impl Compiler {
         parser.parse();
 
         let mut generator = Generator::new();
-        generator.gen(&parser.parse_tree, is_main);
+        generator.gen(&parser.parse_tree, !is_main);
 
         for link in generator.links {
             self.compile_full(&link, false);

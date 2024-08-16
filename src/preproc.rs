@@ -12,7 +12,7 @@ MACRO         : mac id ( MACRO_ARG* ) { [token MACRO_REPEAT MACRO_VAR ]* # }
 
 MACRO_CALL    : id # ( token* # )
 
-MACRO_REPEAT  : # ( [token MACRO_REPEAT MACRO_VAR ]* )
+MACRO_REPEAT  : # ( [token MACRO_REPEAT MACRO_VAR ]* # )
 
 MACRO_VAR     : # id
 
@@ -57,6 +57,7 @@ enum RepeatType {
 
 pub struct Preproc {
     tokens: TokenList,
+    num_tokens_added: usize,
     pub macros: HashMap<String, Macro>,
 }
 
@@ -65,6 +66,7 @@ impl Preproc {
         tokens.reset();
         return Preproc {
             tokens,
+            num_tokens_added: 0,
             macros: HashMap::new(),
         };
     }
@@ -76,13 +78,13 @@ impl Preproc {
             let arg = match self.consume().t_type {
                 TokenType::LPar => {
                     let args = self.process_macro_args();
+                    self.consume_type(TokenType::RPar);
                     let repeat = match self.consume().t_type {
                         TokenType::QMark => RepeatType::ZeroOrOne,
                         TokenType::Star => RepeatType::ZeroOrMore,
                         TokenType::Plus => RepeatType::OneOrMore,
                         _ => panic!("Expected repeat token"),
                     };
-                    self.consume_type(TokenType::RPar);
                     MacroArg::Repeat(args, repeat)
                 }
                 TokenType::LBr => {
@@ -105,32 +107,75 @@ impl Preproc {
             };
             args.push(arg);
         }
+
         return args;
     }
 
-    fn process_macro_body(&mut self) -> Vec<MacroBody> {
-        let mut body = Vec::new();
-
+    fn process_macro_body(&mut self, body: &mut Vec<MacroBody>) {
+        // TODO this function is pretty ugly
         loop {
             match self.consume() {
-                Token {
+                token @ Token {
+                    t_type: TokenType::Var(_),
+                    line: _,
+                } => {
+                    if self.peek_type(&TokenType::Hash) {
+                        match token.t_type {
+                            TokenType::Var(var) => {
+                                if let Some(mac) = self.macros.remove(&var) {
+                                    self.num_tokens_added = 0;
+                                    self.process_macro_call(&mac.body, &mac.args);
+                                    self.macros.insert(var.clone(), mac);
+                                    self.tokens.back(self.num_tokens_added);
+                                }
+                            }
+                            _ => unreachable!(),
+                        }
+                    } else {
+                        body.push(MacroBody::Token(token));
+                    }
+                }
+                token @ Token {
+                    t_type: TokenType::LPar,
+                    line: _,
+                } => {
+                    if self.peek_type(&TokenType::Hash) {
+                        self.consume();
+                        let mut repeat_body = Vec::new();
+                        self.process_macro_body(&mut repeat_body);
+                        body.push(MacroBody::Repeat(repeat_body));
+                    } else {
+                        body.push(MacroBody::Token(token));
+                    }
+                }
+                hash @ Token {
                     t_type: TokenType::Hash,
                     line: _,
-                } => match self.consume().t_type {
-                    TokenType::LPar => body.push(MacroBody::Repeat(self.process_macro_body())),
-                    TokenType::RPar | TokenType::LBr => break,
-                    TokenType::Var(var) => body.push(MacroBody::Var(var)),
-                    token @ _ => panic!("Expected {} after {}", token, TokenType::Hash),
+                } => match &self.peek().unwrap().t_type {
+                    TokenType::RPar => {
+                        self.consume();
+                        break;
+                    }
+                    TokenType::RBr => {
+                        body.push(MacroBody::Token(self.consume()));
+                        break;
+                    }
+                    TokenType::Var(var) => {
+                        body.push(MacroBody::Var(var.to_string()));
+                        self.consume();
+                    }
+                    TokenType::LPar => {
+                        body.push(MacroBody::Token(hash));
+                        body.push(MacroBody::Token(self.consume()));
+                    }
+                    t_type @ _ => panic!("Unexpected {} after {}", t_type, TokenType::Hash),
                 },
                 token @ _ => body.push(MacroBody::Token(token)),
             };
         }
-
-        return body;
     }
 
     fn process_macro_def(&mut self) {
-        self.consume_type(TokenType::Mac);
         let name = match self.consume().t_type {
             TokenType::Var(id) => id,
             _ => panic!("Expected identifier"),
@@ -142,9 +187,9 @@ impl Preproc {
 
         self.consume_type(TokenType::RPar);
 
-        self.consume_type(TokenType::LBr);
+        let mut body = vec![MacroBody::Token(self.consume_type(TokenType::LBr))];
 
-        let body = self.process_macro_body();
+        self.process_macro_body(&mut body);
 
         self.macros.insert(name, Macro { args, body });
     }
@@ -195,10 +240,14 @@ impl Preproc {
         let mut repeats = repeat.repeats.iter();
         for token in body {
             match token {
-                MacroBody::Token(token) => self.tokens.push(token.clone()),
+                MacroBody::Token(token) => {
+                    self.tokens.push(token.clone());
+                    self.num_tokens_added += 1;
+                }
                 MacroBody::Var(var) => {
                     let var = repeat.vars.get(var).expect("Variable not found");
                     self.tokens.push(var.clone());
+                    self.num_tokens_added += 1;
                 }
                 MacroBody::Repeat(body) => {
                     let macro_repeat = if let Some(repeat) = repeats.next() {
@@ -221,11 +270,14 @@ impl Preproc {
         extra_macros: &HashMap<&String, &Macro>,
     ) {
         if let Some(mac) = self.macros.remove(&name) {
+            self.tokens.remove_back();
             self.process_macro_call(&mac.body, &mac.args);
             self.macros.insert(name, mac);
         } else {
-            let mac = extra_macros.get(&name).expect("Macro not found");
-            self.process_macro_call(&mac.body, &mac.args);
+            if let Some(mac) = extra_macros.get(&name) {
+                self.tokens.remove_back();
+                self.process_macro_call(&mac.body, &mac.args);
+            }
         }
     }
 
@@ -241,12 +293,11 @@ impl Preproc {
     }
 
     fn process_macro_use(&mut self) -> MacroUse {
-        self.consume_type(TokenType::Hash);
         self.consume_type(TokenType::Use);
 
         let path = match self.consume().t_type {
             TokenType::Path(path) => path,
-            _ => panic!("Expected path"),
+            token @ _ => panic!("Expected path, got {}", token),
         };
 
         self.consume_type(TokenType::Dot);
@@ -268,6 +319,7 @@ impl Preproc {
             match token.t_type {
                 TokenType::Hash => {
                     if self.peek_type(&TokenType::Use) {
+                        self.tokens.remove_back();
                         uses.push(self.process_macro_use());
                     }
                 }
@@ -283,7 +335,10 @@ impl Preproc {
     pub fn preprocess_macros(&mut self) {
         while let Some(token) = self.tokens.next() {
             match token.t_type {
-                TokenType::Mac => self.process_macro_def(),
+                TokenType::Mac => {
+                    self.tokens.remove_back();
+                    self.process_macro_def();
+                }
                 _ => {}
             }
         }
@@ -302,6 +357,8 @@ impl Preproc {
                 _ => {}
             }
         }
+
+        self.tokens.reset();
 
         // TODO make sure we can have macros inside macros
     }
