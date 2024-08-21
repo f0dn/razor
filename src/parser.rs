@@ -4,48 +4,33 @@ use crate::tokenizer::TokenType::*;
 use crate::tokenizer::*;
 use crate::tokenlist::TokenList;
 
+pub struct Prog {
+    pub stmts: Vec<Stmt>,
+}
+
 pub struct Identifier {
     pub name: String,
     pub line: usize,
     pub is_ref: bool,
 }
 
-pub struct BinOp {
-    pub op: TokenType,
-    pub lhs: Box<Expr>,
-    pub rhs: Box<Expr>,
+pub enum Stmt {
+    StmtAsm(StmtAsm),
+    StmtAssign(StmtAssign),
+    StmtAssignAt(StmtAssignAt),
+    StmtDecl(StmtDecl),
+    StmtExit(StmtExit),
+    StmtExpr(StmtExpr),
+    StmtFor(StmtFor),
+    StmtFunc(StmtFunc),
+    StmtIf(StmtIf),
+    StmtRet(StmtRet),
+    StmtUse(StmtUse),
+    StmtBlank,
 }
 
-pub struct ExprCall {
-    pub name: Identifier,
-    pub arg: Expr,
-}
-
-pub enum Expr {
-    ExprInt(String),
-    ExprId(Identifier),
-    ExprCall(Box<ExprCall>),
-    ExprBinOp(BinOp),
-    ExprAsm(String),
-    ExprStmts(Vec<Stmt>),
-}
-
-pub struct StmtIf {
-    pub expr: Expr,
-    pub stmts: Vec<Stmt>,
-}
-
-pub struct StmtDecl {
-    pub var: Identifier,
-    pub expr: Expr,
-}
-
-pub struct StmtRet {
-    pub expr: Expr,
-}
-
-pub struct StmtExit {
-    pub expr: Expr,
+pub struct StmtAsm {
+    pub code: String,
 }
 
 pub struct StmtAssign {
@@ -60,10 +45,17 @@ pub struct StmtAssignAt {
     pub assign: TokenType,
 }
 
-pub struct StmtFunc {
-    pub ident: Identifier,
-    pub arg: Identifier,
-    pub stmts: Vec<Stmt>,
+pub struct StmtDecl {
+    pub var: Identifier,
+    pub expr: Expr,
+}
+
+pub struct StmtExit {
+    pub expr: Expr,
+}
+
+pub struct StmtExpr {
+    pub expr: Expr,
 }
 
 pub struct StmtFor {
@@ -73,11 +65,18 @@ pub struct StmtFor {
     pub stmts: Vec<Stmt>,
 }
 
-pub struct StmtAsm {
-    pub code: String,
+pub struct StmtFunc {
+    pub ident: Identifier,
+    pub arg: Identifier,
+    pub stmts: Vec<Stmt>,
 }
 
-pub struct StmtExpr {
+pub struct StmtIf {
+    pub expr: Expr,
+    pub stmts: Vec<Stmt>,
+}
+
+pub struct StmtRet {
     pub expr: Expr,
 }
 
@@ -86,23 +85,24 @@ pub struct StmtUse {
     pub ident: Identifier,
 }
 
-pub enum Stmt {
-    StmtRet(StmtRet),
-    StmtExit(StmtExit),
-    StmtDecl(StmtDecl),
-    StmtIf(StmtIf),
-    StmtAssign(StmtAssign),
-    StmtAssignAt(StmtAssignAt),
-    StmtFunc(StmtFunc),
-    StmtFor(StmtFor),
-    StmtAsm(StmtAsm),
-    StmtExpr(StmtExpr),
-    StmtUse(StmtUse),
-    StmtBlank,
+pub enum Expr {
+    ExprAsm(String),
+    ExprBinOp(BinOp),
+    ExprCall(Box<ExprCall>),
+    ExprId(Identifier),
+    ExprInt(String),
+    ExprStmts(Vec<Stmt>),
 }
 
-pub struct Prog {
-    pub stmts: Vec<Stmt>,
+pub struct BinOp {
+    pub op: TokenType,
+    pub lhs: Box<Expr>,
+    pub rhs: Box<Expr>,
+}
+
+pub struct ExprCall {
+    pub name: Identifier,
+    pub arg: Expr,
 }
 
 pub struct Parser {

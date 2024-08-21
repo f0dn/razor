@@ -5,22 +5,6 @@ use crate::{
     tokenlist::TokenList,
 };
 
-/*
-MACRO_USE     : #USE;
-
-MACRO         : mac id ( MACRO_ARG* ) { [token MACRO_REPEAT MACRO_VAR ]* # }
-
-MACRO_CALL    : id # ( token* # )
-
-MACRO_REPEAT  : # ( [token MACRO_REPEAT MACRO_VAR ]* # )
-
-MACRO_VAR     : # id
-
-MACRO_ARG     : { token id } or
-                token or
-                ( MACRO_ARG* )[?*+]
-*/
-
 pub struct MacroUse {
     pub id: String,
     pub path: String,
