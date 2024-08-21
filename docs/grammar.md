@@ -64,7 +64,7 @@ exit
 [IDENT](#ident) = [EXPR](#expr) ;
 
 ### ASSIGN_AT
-@ [ASSIGN](#assign)
+@ [EXPR](#expr) = [EXPR](#expr) ;
 
 ### COMMENT
 // .*
@@ -117,7 +117,7 @@ exit
 [IDENT](#ident) # ( .* )
 
 ### MACRO_REPEAT
-\# ( [MACRO_BODY](#macro_body)* # )
+( # [MACRO_BODY](#macro_body)* # )
 
 ### MACRO_USE
 \# [USE](#use) ;

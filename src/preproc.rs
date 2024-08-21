@@ -80,10 +80,15 @@ impl Preproc {
                     self.consume_type(TokenType::RBr);
                     MacroArg::Id(token.t_type, id)
                 }
+                TokenType::RBr => {
+                    panic!("{} should be escaped", TokenType::RBr);
+                }
                 TokenType::Hash => {
                     let token = self.consume();
                     match token.t_type {
-                        TokenType::LBr | TokenType::LPar => MacroArg::Token(token.t_type),
+                        TokenType::LBr | TokenType::LPar | TokenType::RPar | TokenType::RBr => {
+                            MacroArg::Token(token.t_type)
+                        }
                         _ => panic!("No need to escape {}", token.t_type),
                     }
                 }
