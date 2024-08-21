@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{iter::Peekable, str::Chars};
+use std::{hash::Hash, iter::Peekable, str::Chars};
 
 use crate::tokenlist::TokenList;
 
@@ -15,7 +15,7 @@ impl fmt::Debug for Token {
     }
 }
 
-#[derive(Hash, Clone)]
+#[derive(Clone)]
 pub enum TokenType {
     // Keywords
     Ret,
@@ -63,9 +63,15 @@ pub enum TokenType {
     Eof,
 }
 
+impl Hash for TokenType {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+    }
+}
+
 impl PartialEq for TokenType {
     fn eq(&self, other: &Self) -> bool {
-        return std::mem::discriminant(self) == std::mem::discriminant(other);
+        std::mem::discriminant(self) == std::mem::discriminant(other)
     }
 }
 
@@ -125,7 +131,7 @@ pub struct Tokenizer<'a> {
 }
 
 impl<'a> Tokenizer<'a> {
-    pub fn new(text: &'a String) -> Tokenizer<'a> {
+    pub fn new(text: &'a str) -> Tokenizer<'a> {
         return Tokenizer {
             chars: text.chars().peekable(),
             line: 1,
@@ -136,16 +142,13 @@ impl<'a> Tokenizer<'a> {
     fn tokenize_word(&mut self) {
         use TokenType::*;
         let mut token = String::new();
-        loop {
-            match self.peek() {
-                Some(ch) => match ch {
-                    '0'..='9' | 'a'..='z' | 'A'..='Z' | '_' => {
-                        self.next();
-                        token.push(ch);
-                    }
-                    _ => break,
-                },
-                None => break,
+        while let Some(ch) = self.peek() {
+            match ch {
+                '0'..='9' | 'a'..='z' | 'A'..='Z' | '_' => {
+                    self.next();
+                    token.push(ch);
+                }
+                _ => break,
             }
         }
         match token.as_str() {
@@ -164,16 +167,13 @@ impl<'a> Tokenizer<'a> {
     fn tokenize_num(&mut self) {
         use TokenType::*;
         let mut val = String::new();
-        loop {
-            match self.peek() {
-                Some(ch) => match ch {
-                    '0'..='9' => {
-                        self.next();
-                        val.push(ch);
-                    }
-                    _ => break,
-                },
-                None => break,
+        while let Some(ch) = self.peek() {
+            match ch {
+                '0'..='9' => {
+                    self.next();
+                    val.push(ch);
+                }
+                _ => break,
             }
         }
         self.push_token(Int(val));
@@ -334,11 +334,11 @@ impl<'a> Tokenizer<'a> {
                             len1 = chars.len() + 9,
                             len2 = chars.len()
                         );
-                        for i in 0..chars.len() {
+                        for (i, ch) in chars.iter().enumerate() {
                             asm.push_str(&format!(
                                 "    mov byte [rax + {offset}], {ch}\n",
                                 offset = i + 8,
-                                ch = chars[i] as u8
+                                ch = *ch as u8
                             ));
                         }
                         asm.push_str(&format!(

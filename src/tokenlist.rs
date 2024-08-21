@@ -12,7 +12,7 @@ impl Debug for TokenList {
         let mut last_line = 0;
         for token in self.first.iter() {
             if token.line != last_line {
-                write!(f, "\n")?;
+                writeln!(f)?;
                 last_line = token.line;
             }
             write!(f, "{:?} ", token)?;
@@ -20,13 +20,13 @@ impl Debug for TokenList {
 
         for token in self.second.iter() {
             if token.line != last_line {
-                write!(f, "\n")?;
+                writeln!(f)?;
                 last_line = token.line;
             }
             write!(f, "{:?} ", token)?;
         }
 
-        return Ok(());
+        Ok(())
     }
 }
 
@@ -37,7 +37,7 @@ impl Iterator for TokenList {
         match self.second.pop_front() {
             Some(token) => {
                 self.first.push_back(token.clone());
-                return Some(token);
+                Some(token)
             }
             None => None,
         }
@@ -46,10 +46,10 @@ impl Iterator for TokenList {
 
 impl TokenList {
     pub fn new() -> TokenList {
-        return TokenList {
+        TokenList {
             first: LinkedList::new(),
             second: LinkedList::new(),
-        };
+        }
     }
 
     pub fn back(&mut self, n: usize) {
@@ -81,11 +81,11 @@ impl TokenList {
     }
 
     pub fn remove(&mut self) -> Token {
-        return self.second.pop_front().unwrap();
+        self.second.pop_front().unwrap()
     }
 
     pub fn remove_back(&mut self) -> Token {
-        return self.first.pop_back().unwrap();
+        self.first.pop_back().unwrap()
     }
 
     pub fn reset(&mut self) {

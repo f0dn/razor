@@ -48,11 +48,11 @@ pub struct Preproc {
 impl Preproc {
     pub fn new(mut tokens: TokenList) -> Preproc {
         tokens.reset();
-        return Preproc {
+        Preproc {
             tokens,
             num_tokens_added: 0,
             macros: HashMap::new(),
-        };
+        }
     }
 
     fn process_macro_args(&mut self) -> Vec<MacroArg> {
@@ -92,12 +92,12 @@ impl Preproc {
                         _ => panic!("No need to escape {}", token.t_type),
                     }
                 }
-                token @ _ => MacroArg::Token(token),
+                token => MacroArg::Token(token),
             };
             args.push(arg);
         }
 
-        return args;
+        args
     }
 
     fn process_macro_body(&mut self, body: &mut Vec<MacroBody>) {
@@ -157,9 +157,9 @@ impl Preproc {
                         body.push(MacroBody::Token(hash));
                         body.push(MacroBody::Token(self.consume()));
                     }
-                    t_type @ _ => panic!("Unexpected {} after {}", t_type, TokenType::Hash),
+                    t_type => panic!("Unexpected {} after {}", t_type, TokenType::Hash),
                 },
-                token @ _ => body.push(MacroBody::Token(token)),
+                token => body.push(MacroBody::Token(token)),
             };
         }
     }
@@ -204,12 +204,8 @@ impl Preproc {
                 }
                 MacroArg::Repeat(args, repeat_type) => {
                     let mut repeat = Vec::new();
-                    loop {
-                        if let Some(inner_vars) = self.process_macro_inner(args) {
-                            repeat.push(inner_vars);
-                        } else {
-                            break;
-                        }
+                    while let Some(inner_vars) = self.process_macro_inner(args) {
+                        repeat.push(inner_vars);
                         if repeat_type == &RepeatType::ZeroOrOne {
                             break;
                         }
@@ -222,7 +218,7 @@ impl Preproc {
             }
         }
 
-        return Some(MacroRepeat { vars, repeats });
+        Some(MacroRepeat { vars, repeats })
     }
 
     fn insert_macro_body(&mut self, body: &Vec<MacroBody>, repeat: &MacroRepeat) {
@@ -246,7 +242,7 @@ impl Preproc {
                         repeats.next().expect("No more repeats")
                     };
                     for repeat in macro_repeat {
-                        self.insert_macro_body(body, &repeat);
+                        self.insert_macro_body(body, repeat);
                     }
                 }
             }
@@ -262,11 +258,9 @@ impl Preproc {
             self.tokens.remove_back();
             self.process_macro_call(&mac.body, &mac.args);
             self.macros.insert(name, mac);
-        } else {
-            if let Some(mac) = extra_macros.get(&name) {
-                self.tokens.remove_back();
-                self.process_macro_call(&mac.body, &mac.args);
-            }
+        } else if let Some(mac) = extra_macros.get(&name) {
+            self.tokens.remove_back();
+            self.process_macro_call(&mac.body, &mac.args);
         }
     }
 
@@ -286,7 +280,7 @@ impl Preproc {
 
         let path = match self.consume().t_type {
             TokenType::Path(path) => path,
-            token @ _ => panic!("Expected path, got {}", token),
+            token => panic!("Expected path, got {}", token),
         };
 
         self.consume_type(TokenType::Dot);
@@ -298,37 +292,31 @@ impl Preproc {
 
         self.consume_type(TokenType::Semi);
 
-        return MacroUse { id, path };
+        MacroUse { id, path }
     }
 
     pub fn preprocess_uses(&mut self) -> Vec<MacroUse> {
         let mut uses = Vec::new();
 
         while let Some(token) = self.tokens.next() {
-            match token.t_type {
-                TokenType::Hash => {
-                    if self.peek_type(&TokenType::Use) {
-                        self.tokens.remove_back();
-                        uses.push(self.process_macro_use());
-                    }
+            if let TokenType::Hash = token.t_type {
+                if self.peek_type(&TokenType::Use) {
+                    self.tokens.remove_back();
+                    uses.push(self.process_macro_use());
                 }
-                _ => {}
             }
         }
 
         self.tokens.reset();
 
-        return uses;
+        uses
     }
 
     pub fn preprocess_macros(&mut self) {
         while let Some(token) = self.tokens.next() {
-            match token.t_type {
-                TokenType::Mac => {
-                    self.tokens.remove_back();
-                    self.process_macro_def();
-                }
-                _ => {}
+            if let TokenType::Mac = token.t_type {
+                self.tokens.remove_back();
+                self.process_macro_def();
             }
         }
 
@@ -337,13 +325,10 @@ impl Preproc {
 
     pub fn preprocess_macro_calls(&mut self, macros: &HashMap<&String, &Macro>) {
         while let Some(token) = self.tokens.next() {
-            match token.t_type {
-                TokenType::Var(name) => {
-                    if self.peek_type(&TokenType::Hash) {
-                        self.process_macro_call_with_extra(name, macros);
-                    }
+            if let TokenType::Var(name) = token.t_type {
+                if self.peek_type(&TokenType::Hash) {
+                    self.process_macro_call_with_extra(name, macros);
                 }
-                _ => {}
             }
         }
 
@@ -353,7 +338,7 @@ impl Preproc {
     }
 
     pub fn take_tokens(&mut self) -> TokenList {
-        return std::mem::replace(&mut self.tokens, TokenList::new());
+        std::mem::replace(&mut self.tokens, TokenList::new())
     }
 
     fn peek(&self) -> Option<&Token> {
@@ -368,7 +353,7 @@ impl Preproc {
     }
 
     fn consume(&mut self) -> Token {
-        return self.tokens.remove();
+        self.tokens.remove()
     }
 
     fn consume_type(&mut self, t_type: TokenType) -> Token {
@@ -376,6 +361,6 @@ impl Preproc {
         if token.t_type != t_type {
             panic!("Expected token of type {}, got {}", t_type, token.t_type);
         }
-        return token;
+        token
     }
 }

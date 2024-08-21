@@ -27,10 +27,10 @@ impl FileState {
 
         let preproc = Preproc::new(tokenizer.tokens);
 
-        return FileState {
+        FileState {
             preproc,
             compiled_text: None,
-        };
+        }
     }
 }
 
@@ -40,14 +40,14 @@ pub struct Compiler {
 
 impl Compiler {
     pub fn new() -> Compiler {
-        return Compiler {
+        Compiler {
             files: HashMap::new(),
-        };
+        }
     }
 
     fn compile_for_macros(&mut self, path: &String) {
         if !self.files.contains_key(path) {
-            let mut file_state = FileState::new(&path);
+            let mut file_state = FileState::new(path);
 
             let mut macros = HashMap::new();
 
@@ -124,7 +124,7 @@ impl Compiler {
         generator.gen(&parser.parse_tree, !is_main);
 
         for link in generator.links {
-            self.compile_full(&link, false);
+            self.compile_full(link, false);
         }
 
         file_state.compiled_text = Some(generator.text);
@@ -145,7 +145,7 @@ impl Compiler {
                 let object_path = format!("{}.o", path);
 
                 Command::new("nasm")
-                    .args(&["-f", "elf64"])
+                    .args(["-f", "elf64"])
                     .arg(&asm_path)
                     .arg("-o")
                     .arg(&object_path)
@@ -163,14 +163,14 @@ impl Compiler {
 
         let files = &self
             .files
-            .iter()
-            .map(|(path, _)| format!("{}.o", path))
+            .keys()
+            .map(|path| format!("{}.o", path))
             .collect::<Vec<String>>();
 
         Command::new("ld")
             .args(files)
             .arg("-o")
-            .arg(&out_path)
+            .arg(out_path)
             .status()
             .expect("Failed to execute ld");
 

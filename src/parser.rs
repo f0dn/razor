@@ -15,18 +15,18 @@ pub struct Identifier {
 }
 
 pub enum Stmt {
-    StmtAsm(StmtAsm),
-    StmtAssign(StmtAssign),
-    StmtAssignAt(StmtAssignAt),
-    StmtDecl(StmtDecl),
-    StmtExit(StmtExit),
-    StmtExpr(StmtExpr),
-    StmtFor(StmtFor),
-    StmtFunc(StmtFunc),
-    StmtIf(StmtIf),
-    StmtRet(StmtRet),
-    StmtUse(StmtUse),
-    StmtBlank,
+    Asm(StmtAsm),
+    Assign(StmtAssign),
+    AssignAt(StmtAssignAt),
+    Decl(StmtDecl),
+    Exit(StmtExit),
+    Expr(StmtExpr),
+    For(StmtFor),
+    Func(StmtFunc),
+    If(StmtIf),
+    Ret(StmtRet),
+    Use(StmtUse),
+    Blank,
 }
 
 pub struct StmtAsm {
@@ -86,12 +86,12 @@ pub struct StmtUse {
 }
 
 pub enum Expr {
-    ExprAsm(String),
-    ExprBinOp(BinOp),
-    ExprCall(Box<ExprCall>),
-    ExprId(Identifier),
-    ExprInt(String),
-    ExprStmts(Vec<Stmt>),
+    Asm(String),
+    BinOp(BinOp),
+    Call(Box<ExprCall>),
+    Id(Identifier),
+    Int(String),
+    Stmts(Vec<Stmt>),
 }
 
 pub struct BinOp {
@@ -177,7 +177,7 @@ parse_fn! {
 
 parse_fn! {
     parse_decl -> StmtDecl {
-        {Decl}, parse_ident_name() => var, {Eq}, parse_expr() => expr, {Semi},
+        {Decl}, parse_ident_name() => var, {Eq}, parse_expr() => expr, {TokenType::Semi},
     }
 }
 
@@ -189,13 +189,13 @@ parse_fn! {
 
 parse_fn! {
     parse_assign_at -> StmtAssignAt {
-        {At}, parse_expr() => var, {Eq} => assign, parse_expr() => expr, {Semi},
+        {At}, parse_expr() => var, {Eq} => assign, parse_expr() => expr, {TokenType::Semi},
     }
 }
 
 parse_fn! {
     parse_func -> StmtFunc {
-        {Func}, parse_ident_name() => ident, {LPar}, parse_ident_name() => arg, {RPar}, {LBr},
+        {Func}, parse_ident_name() => ident, {LPar}, parse_ident_name() => arg, {TokenType::RPar}, {TokenType::LBr},
             parse_mult(RBr) => stmts,
         {RBr},
     }
@@ -209,7 +209,7 @@ parse_fn! {
 
 parse_fn! {
     parse_for -> StmtFor {
-        {For}, parse_decl() => init, , parse_expr() => cond, {Semi}, parse_assign() => iter, {LBr},
+        {For}, parse_decl() => init, , parse_expr() => cond, {Semi}, parse_assign() => iter, {TokenType::LBr},
             parse_mult(RBr) => stmts,
         {RBr},
     }
@@ -217,14 +217,14 @@ parse_fn! {
 
 parse_fn! {
     parse_use -> StmtUse {
-        {Use}, parse_path() => path, {Dot}, parse_ident_name() => ident, {Semi},
+        {Use}, parse_path() => path, {Dot}, parse_ident_name() => ident, {TokenType::Semi},
     }
 }
 
-impl<'a> Parser {
+impl Parser {
     pub fn new(mut tokens: TokenList) -> Parser {
         tokens.reset();
-        return Parser {
+        Parser {
             tokens,
             op: HashMap::from([
                 (Ex, 4),
@@ -241,13 +241,13 @@ impl<'a> Parser {
                 (DPipe, 0),
             ]),
             parse_tree: Prog { stmts: Vec::new() },
-        };
+        }
     }
 
     fn parse_path(&mut self) -> String {
         let tk = self.consume();
         match tk.t_type {
-            Path(val) => return val,
+            Path(val) => val,
             _ => Parser::error("Unexpected {}", &tk),
         }
     }
@@ -255,13 +255,11 @@ impl<'a> Parser {
     fn parse_ident_name(&mut self) -> Identifier {
         let tk = self.consume();
         match tk.t_type {
-            Var(name) => {
-                return Identifier {
-                    name,
-                    line: tk.line,
-                    is_ref: false,
-                };
-            }
+            Var(name) => Identifier {
+                name,
+                line: tk.line,
+                is_ref: false,
+            },
             _ => Parser::error("Unexpected {}", &tk),
         }
     }
@@ -269,22 +267,19 @@ impl<'a> Parser {
     fn parse_asm(&mut self) -> StmtAsm {
         let tk = self.consume();
         match tk.t_type {
-            Asm(val) => {
-                return StmtAsm { code: val };
-            }
+            Asm(val) => StmtAsm { code: val },
             _ => Parser::error("Unexpected {}", &tk),
         }
     }
 
     fn parse_atom(&mut self) -> Expr {
-        use Expr::*;
         let mut tk = self.consume();
         match tk.t_type {
-            Int(val) => return ExprInt(val),
+            Int(val) => Expr::Int(val),
             Var(_) | Amp => {
                 if self.peek().t_type == LPar {
                     self.tokens.push_front(tk);
-                    return ExprCall(Box::new(self.parse_call()));
+                    return Expr::Call(Box::new(self.parse_call()));
                 }
 
                 let mut is_ref = false;
@@ -294,29 +289,27 @@ impl<'a> Parser {
                 }
 
                 match &tk.t_type {
-                    Var(val) => {
-                        return ExprId(Identifier {
-                            name: val.to_string(),
-                            line: tk.line,
-                            is_ref,
-                        });
-                    }
+                    Var(val) => Expr::Id(Identifier {
+                        name: val.to_string(),
+                        line: tk.line,
+                        is_ref,
+                    }),
                     _ => Parser::error("Unexpected {}", &tk),
                 }
             }
-            Asm(val) => return ExprAsm(val),
+            Asm(val) => Expr::Asm(val),
             LPar => {
                 let expr = self.parse_expr();
                 let tk = self.consume();
                 match tk.t_type {
-                    RPar => return expr,
+                    RPar => expr,
                     _ => Parser::error("Missing ')'", &tk),
                 }
             }
             LBr => {
                 let stmts = self.parse_mult(RBr);
                 self.consume();
-                return ExprStmts(stmts);
+                Expr::Stmts(stmts)
             }
             _ => Parser::error("Unexpected {}", &tk),
         }
@@ -327,11 +320,11 @@ impl<'a> Parser {
 
         loop {
             let tk = self.peek();
-            let prec;
-            match self.op.get(&tk.t_type) {
-                Some(p) => prec = *p,
+
+            let prec = match self.op.get(&tk.t_type) {
+                Some(p) => *p,
                 None => break,
-            }
+            };
 
             if prec < min_prec {
                 break;
@@ -339,57 +332,54 @@ impl<'a> Parser {
 
             let op = self.consume().t_type;
             let rhs = self.parse_expr_prec(prec + 1);
-            lhs = Expr::ExprBinOp(BinOp {
+            lhs = Expr::BinOp(BinOp {
                 op,
                 lhs: Box::new(lhs),
                 rhs: Box::new(rhs),
             });
         }
-        return lhs;
+        lhs
     }
 
     fn parse_expr(&mut self) -> Expr {
-        return self.parse_expr_prec(0);
+        self.parse_expr_prec(0)
     }
 
     fn parse_stmt(&mut self) -> Stmt {
-        use Stmt::*;
         let tk = self.peek();
         match tk.t_type {
-            Ret => return StmtRet(self.parse_ret()),
-            Exit => return StmtExit(self.parse_exit()),
-            Decl => return StmtDecl(self.parse_decl()),
-            If => return StmtIf(self.parse_if()),
+            Ret => Stmt::Ret(self.parse_ret()),
+            Exit => Stmt::Exit(self.parse_exit()),
+            Decl => Stmt::Decl(self.parse_decl()),
+            If => Stmt::If(self.parse_if()),
             Var(_) => {
                 if self.peek_mult(2).t_type == Eq {
-                    return StmtAssign(self.parse_assign());
+                    return Stmt::Assign(self.parse_assign());
                 }
-                return StmtExpr(crate::parser::StmtExpr {
+                Stmt::Expr(crate::parser::StmtExpr {
                     expr: self.parse_expr(),
-                });
+                })
             }
-            Func => return StmtFunc(self.parse_func()),
-            For => return StmtFor(self.parse_for()),
-            Asm(_) => return StmtAsm(self.parse_asm()),
+            Func => Stmt::Func(self.parse_func()),
+            For => Stmt::For(self.parse_for()),
+            Asm(_) => Stmt::Asm(self.parse_asm()),
             Semi => {
                 self.consume();
-                return StmtBlank;
+                Stmt::Blank
             }
             Int(_) => {
                 if self.peek_mult(2).t_type == At {
                     self.consume();
-                    return StmtAssignAt(self.parse_assign_at());
+                    return Stmt::AssignAt(self.parse_assign_at());
                 }
-                return StmtExpr(crate::parser::StmtExpr {
-                    expr: self.parse_expr(),
-                });
-            }
-            Use => return StmtUse(self.parse_use()),
-            _ => {
-                return StmtExpr(crate::parser::StmtExpr {
+                Stmt::Expr(crate::parser::StmtExpr {
                     expr: self.parse_expr(),
                 })
             }
+            Use => Stmt::Use(self.parse_use()),
+            _ => Stmt::Expr(crate::parser::StmtExpr {
+                expr: self.parse_expr(),
+            }),
         }
     }
 
@@ -402,7 +392,7 @@ impl<'a> Parser {
                 stmts.push(self.parse_stmt());
             }
         }
-        return stmts;
+        stmts
     }
 
     pub fn parse(&mut self) {
@@ -418,7 +408,7 @@ impl<'a> Parser {
     }
 
     fn consume(&mut self) -> Token {
-        return self.tokens.next().unwrap();
+        self.tokens.next().unwrap()
     }
 
     fn error(err: &str, token: &Token) -> ! {

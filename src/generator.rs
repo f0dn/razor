@@ -27,7 +27,7 @@ pub struct Generator<'a> {
 
 impl<'a> Generator<'a> {
     pub fn new() -> Generator<'a> {
-        return Generator {
+        Generator {
             text: String::from("section .text\n"),
             functions: String::new(),
             stack: Vec::new(),
@@ -36,14 +36,13 @@ impl<'a> Generator<'a> {
             ext: HashSet::new(),
             global: String::new(),
             links: Vec::new(),
-        };
+        }
     }
 
     fn gen_expr(&mut self, expr: &'a Expr) -> String {
-        use Expr::*;
         let expr_string = match expr {
-            ExprInt(int) => format!("    mov rax, {int}"),
-            ExprId(ident) => {
+            Expr::Int(int) => format!("    mov rax, {int}"),
+            Expr::Id(ident) => {
                 let loc = self.get_loc(&ident.name, Type::Var);
                 match loc {
                     Some(loc) => {
@@ -64,7 +63,7 @@ impl<'a> Generator<'a> {
                     }
                 }
             }
-            ExprBinOp(bin_op) => {
+            Expr::BinOp(bin_op) => {
                 let op = match bin_op.op {
                     Plus => "    add rax, rcx",
                     Dash => "    sub rax, rcx",
@@ -129,13 +128,13 @@ impl<'a> Generator<'a> {
     mov rcx, rax
 {pop}
 {op}",
-                    lhs = self.gen_expr(&*bin_op.lhs),
+                    lhs = self.gen_expr(&bin_op.lhs),
                     push = self.push("rax"),
-                    rhs = self.gen_expr(&*bin_op.rhs),
+                    rhs = self.gen_expr(&bin_op.rhs),
                     pop = self.pop("rax")
                 )
             }
-            ExprCall(expr_call) => {
+            Expr::Call(expr_call) => {
                 self.ext.insert(expr_call.name.name.clone());
                 format!(
                     "{call}
@@ -144,18 +143,18 @@ impl<'a> Generator<'a> {
                     name = expr_call.name.name
                 )
             }
-            ExprAsm(asm) => self.gen_asm(asm),
-            ExprStmts(stmts) => self.gen_scope(stmts),
+            Expr::Asm(asm) => self.gen_asm(asm),
+            Expr::Stmts(stmts) => self.gen_scope(stmts),
         };
-        return format!(
+        format!(
             "\
 ; Expression Start
 {expr_string}
 ; Expression End",
-        );
+        )
     }
 
-    fn gen_asm(&mut self, asm: &'a String) -> String {
+    fn gen_asm(&mut self, asm: &'a str) -> String {
         let mut split = asm.split('#');
         let mut string = split.next().unwrap().to_string();
         for part in split {
@@ -182,7 +181,7 @@ impl<'a> Generator<'a> {
             }
             string.push_str(&part[end..]);
         }
-        return string;
+        string
     }
 
     fn gen_if(&mut self, stmt_if: &'a StmtIf) -> String {
@@ -199,7 +198,7 @@ impl<'a> Generator<'a> {
             num_jmps = self.num_jmps,
         );
         self.num_jmps += 1;
-        return string;
+        string
     }
 
     fn gen_use(&mut self, stmt_use: &'a StmtUse) -> String {
@@ -207,21 +206,21 @@ impl<'a> Generator<'a> {
         if !self.links.contains(&&stmt_use.path) {
             self.links.push(&stmt_use.path);
         }
-        return String::new();
+        String::new()
     }
 
     fn gen_assign(&mut self, stmt_assign: &'a StmtAssign) -> String {
         let loc = self.get_loc(&stmt_assign.var.name, Type::Var);
         match loc {
             Some(loc) => {
-                return format!(
+                format!(
                     "; Assign Start
 {expr}
     mov QWORD [rsp+{offset}], rax
 ; Assign End",
                     expr = self.gen_expr(&stmt_assign.expr),
                     offset = self.stack.len() * 8 - loc - 8
-                );
+                )
             }
             None => panic!(
                 "Unknown identifier '{}' at line {}",
@@ -232,7 +231,7 @@ impl<'a> Generator<'a> {
 
     fn gen_assign_at(&mut self, stmt_assign_at: &'a StmtAssignAt) -> String {
         let var = self.gen_expr(&stmt_assign_at.var);
-        return format!(
+        format!(
             "; Assign At Start
 {var}
 {push}
@@ -243,7 +242,7 @@ impl<'a> Generator<'a> {
             push = self.push("rax"),
             expr = self.gen_expr(&stmt_assign_at.expr),
             pop = self.pop("rcx")
-        );
+        )
     }
 
     fn gen_decl(&mut self, stmt_decl: &'a StmtDecl) -> String {
@@ -256,26 +255,26 @@ impl<'a> Generator<'a> {
             name: &stmt_decl.var.name,
             t: Type::Var,
         }));
-        return format!(
+        format!(
             "{begin_string}
     push rax
 ; Declaration End",
-        );
+        )
     }
 
     fn gen_ret(&mut self, stmt_ret: &'a StmtRet) -> String {
         let expr = self.gen_expr(&stmt_ret.expr);
         let name = &self.stack[self.get_func()].as_ref().unwrap().name;
-        return format!(
+        format!(
             "; Return Start
 {expr}
     jmp .return_{name}
 ; Return End",
-        );
+        )
     }
 
     fn gen_exit(&mut self, stmt_exit: &'a StmtExit) -> String {
-        return format!(
+        format!(
             "; Exit Start
 {expr}
     mov rdi, rax
@@ -283,7 +282,7 @@ impl<'a> Generator<'a> {
     syscall
 ; Exit End",
             expr = self.gen_expr(&stmt_exit.expr)
-        );
+        )
     }
 
     fn gen_func(&mut self, stmt_func: &'a StmtFunc) -> String {
@@ -305,7 +304,7 @@ impl<'a> Generator<'a> {
         let (first, second) = self.gen_scope_split(&stmt_func.stmts);
         self.stack.pop();
         let name = self.stack.pop().unwrap().unwrap().name;
-        return format!(
+        format!(
             "{begin_string}
     push rax
 {first}
@@ -314,7 +313,7 @@ impl<'a> Generator<'a> {
     add rsp, 8
     ret
 ; Function End"
-        );
+        )
     }
 
     fn gen_for(&mut self, stmt_for: &'a StmtFor) -> String {
@@ -339,40 +338,39 @@ impl<'a> Generator<'a> {
             iter = self.gen_assign(&stmt_for.iter),
             end_num = num_jmps + 1
         );
-        return begin_string;
+        begin_string
     }
 
     fn gen_scope(&mut self, stmts: &'a Vec<Stmt>) -> String {
         let (first, second) = self.gen_scope_split(stmts);
-        return first + &second;
+        first + &second
     }
 
     fn gen_scope_split(&mut self, stmts: &'a Vec<Stmt>) -> (String, String) {
         self.scopes.push(self.stack.len());
-        use Stmt::*;
         let mut stmt_string = String::new();
         for stmt in stmts {
             stmt_string.push('\n');
             let stmt = match stmt {
-                StmtRet(stmt_ret) => self.gen_ret(stmt_ret),
-                StmtExit(stmt_exit) => self.gen_exit(stmt_exit),
-                StmtDecl(stmt_decl) => self.gen_decl(stmt_decl),
-                StmtIf(stmt_if) => self.gen_if(stmt_if),
-                StmtAssign(stmt_assign) => self.gen_assign(stmt_assign),
-                StmtFunc(stmt_func) => {
+                Stmt::Ret(stmt_ret) => self.gen_ret(stmt_ret),
+                Stmt::Exit(stmt_exit) => self.gen_exit(stmt_exit),
+                Stmt::Decl(stmt_decl) => self.gen_decl(stmt_decl),
+                Stmt::If(stmt_if) => self.gen_if(stmt_if),
+                Stmt::Assign(stmt_assign) => self.gen_assign(stmt_assign),
+                Stmt::Func(stmt_func) => {
                     let func = self.gen_func(stmt_func);
                     self.functions.push_str(&func);
                     String::new()
                 }
-                StmtFor(stmt_for) => self.gen_for(&stmt_for),
-                StmtAsm(stmt_asm) => {
+                Stmt::For(stmt_for) => self.gen_for(stmt_for),
+                Stmt::Asm(stmt_asm) => {
                     stmt_string.push_str(&self.gen_asm(&stmt_asm.code));
                     String::new()
                 }
-                StmtExpr(stmt_expr) => self.gen_expr(&stmt_expr.expr),
-                StmtAssignAt(stmt_assign_at) => self.gen_assign_at(stmt_assign_at),
-                StmtUse(stmt_use) => self.gen_use(stmt_use),
-                StmtBlank => continue,
+                Stmt::Expr(stmt_expr) => self.gen_expr(&stmt_expr.expr),
+                Stmt::AssignAt(stmt_assign_at) => self.gen_assign_at(stmt_assign_at),
+                Stmt::Use(stmt_use) => self.gen_use(stmt_use),
+                Stmt::Blank => continue,
             };
             stmt_string.push_str(&stmt);
         }
@@ -380,7 +378,7 @@ impl<'a> Generator<'a> {
         for _ in 0..scope_len {
             self.stack.pop();
         }
-        return (
+        (
             format!(
                 "; Scope Start
 {stmt_string}"
@@ -391,7 +389,7 @@ add rsp, {offset}
 ; Scope End",
                 offset = scope_len * 8
             ),
-        );
+        )
     }
 
     pub fn gen(&mut self, prog: &'a Prog, lib: bool) {
@@ -414,12 +412,12 @@ _start:\n",
 
     fn push(&mut self, reg: &str) -> String {
         self.stack.push(None);
-        return format!("    push {}", reg);
+        format!("    push {}", reg)
     }
 
     fn pop(&mut self, reg: &str) -> String {
         self.stack.pop();
-        return format!("    pop {}", reg);
+        format!("    pop {}", reg)
     }
 
     fn get_func(&self) -> usize {
@@ -433,7 +431,7 @@ _start:\n",
                 None => continue,
             }
         }
-        return 0;
+        0
     }
 
     fn get_loc(&self, ident: &String, t: Type) -> Option<usize> {
@@ -441,13 +439,13 @@ _start:\n",
         for i in (func..self.stack.len()).rev() {
             match &self.stack[i] {
                 Some(id) => {
-                    if id.name == ident && &id.t == &t && id.name != "_" {
+                    if id.name == ident && id.t == t && id.name != "_" {
                         return Some(i * 8);
                     }
                 }
                 None => continue,
             }
         }
-        return None;
+        None
     }
 }
