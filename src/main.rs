@@ -8,6 +8,8 @@ mod preproc;
 mod tokenizer;
 mod tokenlist;
 
+const ERROR_SIZE: usize = 100;
+
 fn main() {
     let mut args = args();
     args.next();

@@ -105,20 +105,53 @@ pub struct ExprCall {
     pub arg: Expr,
 }
 
+#[derive(Debug)]
+pub struct Error {
+    pub msg: String,
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.msg)
+    }
+}
+
+impl std::error::Error for Error {}
+
+impl Error {
+    fn with_context(&self, context: &str) -> Error {
+        Error {
+            msg: format!("{}\n {}", context, self.msg),
+        }
+    }
+}
+
+fn context(context: &str) -> impl FnOnce(Error) -> Error + '_ {
+    |err| err.with_context(context)
+}
+
 pub struct Parser {
     tokens: TokenList,
     op: HashMap<TokenType, i8>,
     pub parse_tree: Prog,
 }
 
+macro_rules! error {
+    ($tokens:expr, $($arg:tt)*) => {
+        return Err(Error {
+            msg: format!("{}\n{}", $tokens.error_context(), format!($($arg)*)),
+        })
+    };
+}
+
 macro_rules! parse_fn {
     ($name:ident -> $ret:ident {
-        $($({$($tk:pat_param)|+}$( => $tk_field:ident)?)?,
+        $($({$($tk:tt)|+}$( => $tk_field:ident)?)?,
           $($func:ident($($arg:expr)?) => $func_field:ident,)?
         )+}
     ) => {
         impl Parser {
-             fn $name(&mut self) -> $ret {
+             fn $name(&mut self) -> Result<$ret, Error> {
                 $(
                     $(
                         $(let $tk_field;)?
@@ -129,16 +162,16 @@ macro_rules! parse_fn {
                                     $tk_field = tk.t_type;
                                 )?
                             }
-                            _ => Parser::error("Unexpected {}", &tk),
+                            _ => error!(self.tokens, "Expected {}, got {}", $($tk)+, &tk.t_type),
                         }
                     )?
 
                     $(
-                        let $func_field = self.$func($($arg)?);
+                        let $func_field = self.$func($($arg)?)?;
                     )?
                 )+
 
-                return $ret {
+                return Ok($ret {
                     $(
                         $(
                             $(
@@ -149,7 +182,7 @@ macro_rules! parse_fn {
                             $func_field,
                         )?
                     )+
-                };
+                });
             }
         }
     };
@@ -177,7 +210,7 @@ parse_fn! {
 
 parse_fn! {
     parse_decl -> StmtDecl {
-        {Decl}, parse_ident_name() => var, {Eq}, parse_expr() => expr, {TokenType::Semi},
+        {Decl}, parse_ident_name() => var, {Eq}, parse_expr() => expr, {Semi},
     }
 }
 
@@ -189,13 +222,13 @@ parse_fn! {
 
 parse_fn! {
     parse_assign_at -> StmtAssignAt {
-        {At}, parse_expr() => var, {Eq} => assign, parse_expr() => expr, {TokenType::Semi},
+        {At}, parse_expr() => var, {Eq} => assign, parse_expr() => expr, {Semi},
     }
 }
 
 parse_fn! {
     parse_func -> StmtFunc {
-        {Func}, parse_ident_name() => ident, {LPar}, parse_ident_name() => arg, {TokenType::RPar}, {TokenType::LBr},
+        {Func}, parse_ident_name() => ident, {LPar}, parse_ident_name() => arg, {RPar}, {LBr},
             parse_mult(RBr) => stmts,
         {RBr},
     }
@@ -209,7 +242,7 @@ parse_fn! {
 
 parse_fn! {
     parse_for -> StmtFor {
-        {For}, parse_decl() => init, , parse_expr() => cond, {Semi}, parse_assign() => iter, {TokenType::LBr},
+        {For}, parse_decl() => init, , parse_expr() => cond, {Semi}, parse_assign() => iter, {LBr},
             parse_mult(RBr) => stmts,
         {RBr},
     }
@@ -217,7 +250,7 @@ parse_fn! {
 
 parse_fn! {
     parse_use -> StmtUse {
-        {Use}, parse_path() => path, {Dot}, parse_ident_name() => ident, {TokenType::Semi},
+        {Use}, parse_path() => path, {Dot}, parse_ident_name() => ident, {Semi},
     }
 }
 
@@ -244,42 +277,45 @@ impl Parser {
         }
     }
 
-    fn parse_path(&mut self) -> String {
+    fn parse_path(&mut self) -> Result<String, Error> {
         let tk = self.consume();
         match tk.t_type {
-            Path(val) => val,
-            _ => Parser::error("Unexpected {}", &tk),
+            Path(val) => Ok(val),
+            _ => error!(self.tokens, "Expected path, got {}", &tk.t_type),
         }
     }
 
-    fn parse_ident_name(&mut self) -> Identifier {
+    fn parse_ident_name(&mut self) -> Result<Identifier, Error> {
         let tk = self.consume();
         match tk.t_type {
-            Var(name) => Identifier {
+            Var(name) => Ok(Identifier {
                 name,
                 line: tk.line,
                 is_ref: false,
-            },
-            _ => Parser::error("Unexpected {}", &tk),
+            }),
+            _ => error!(self.tokens, "Expected identifier, got {}", &tk.t_type),
         }
     }
 
-    fn parse_asm(&mut self) -> StmtAsm {
+    fn parse_asm(&mut self) -> Result<StmtAsm, Error> {
         let tk = self.consume();
         match tk.t_type {
-            Asm(val) => StmtAsm { code: val },
-            _ => Parser::error("Unexpected {}", &tk),
+            Asm(val) => Ok(StmtAsm { code: val }),
+            _ => error!(self.tokens, "Expected assembly, got {}", &tk.t_type),
         }
     }
 
-    fn parse_atom(&mut self) -> Expr {
+    fn parse_atom(&mut self) -> Result<Expr, Error> {
+        let err_context = context("while parsing expression");
         let mut tk = self.consume();
         match tk.t_type {
-            Int(val) => Expr::Int(val),
+            Int(val) => Ok(Expr::Int(val)),
             Var(_) | Amp => {
                 if self.peek().t_type == LPar {
                     self.tokens.push_front(tk);
-                    return Expr::Call(Box::new(self.parse_call()));
+                    return Ok(Expr::Call(Box::new(
+                        self.parse_call().map_err(err_context)?,
+                    )));
                 }
 
                 let mut is_ref = false;
@@ -289,34 +325,43 @@ impl Parser {
                 }
 
                 match &tk.t_type {
-                    Var(val) => Expr::Id(Identifier {
+                    Var(val) => Ok(Expr::Id(Identifier {
                         name: val.to_string(),
                         line: tk.line,
                         is_ref,
-                    }),
-                    _ => Parser::error("Unexpected {}", &tk),
+                    })),
+                    _ => error!(
+                        self.tokens,
+                        "Expected variable after {}, got {}", Amp, &tk.t_type
+                    ),
                 }
             }
-            Asm(val) => Expr::Asm(val),
+            Asm(val) => Ok(Expr::Asm(val)),
             LPar => {
-                let expr = self.parse_expr();
+                let expr = self.parse_expr().map_err(err_context)?;
                 let tk = self.consume();
                 match tk.t_type {
-                    RPar => expr,
-                    _ => Parser::error("Missing ')'", &tk),
+                    RPar => Ok(expr),
+                    _ => error!(
+                        self.tokens,
+                        "Expected {} to close parenthesis, got {}", RPar, &tk.t_type
+                    ),
                 }
             }
             LBr => {
-                let stmts = self.parse_mult(RBr);
+                let stmts = self.parse_mult(RBr).map_err(err_context)?;
                 self.consume();
-                Expr::Stmts(stmts)
+                Ok(Expr::Stmts(stmts))
             }
-            _ => Parser::error("Unexpected {}", &tk),
+            _ => error!(
+                self.tokens,
+                "Unexpected {} while parsing expression", &tk.t_type
+            ),
         }
     }
 
-    fn parse_expr_prec(&mut self, min_prec: i8) -> Expr {
-        let mut lhs = self.parse_atom();
+    fn parse_expr_prec(&mut self, min_prec: i8) -> Result<Expr, Error> {
+        let mut lhs = self.parse_atom()?;
 
         loop {
             let tk = self.peek();
@@ -331,91 +376,118 @@ impl Parser {
             }
 
             let op = self.consume().t_type;
-            let rhs = self.parse_expr_prec(prec + 1);
+            let rhs = self.parse_expr_prec(prec + 1)?;
             lhs = Expr::BinOp(BinOp {
                 op,
                 lhs: Box::new(lhs),
                 rhs: Box::new(rhs),
             });
         }
-        lhs
+        Ok(lhs)
     }
 
-    fn parse_expr(&mut self) -> Expr {
+    fn parse_expr(&mut self) -> Result<Expr, Error> {
         self.parse_expr_prec(0)
     }
 
-    fn parse_stmt(&mut self) -> Stmt {
+    fn parse_stmt(&mut self) -> Result<Stmt, Error> {
         let tk = self.peek();
         match tk.t_type {
-            Ret => Stmt::Ret(self.parse_ret()),
-            Exit => Stmt::Exit(self.parse_exit()),
-            Decl => Stmt::Decl(self.parse_decl()),
-            If => Stmt::If(self.parse_if()),
+            Ret => Ok(Stmt::Ret(
+                self.parse_ret()
+                    .map_err(context("while parsing return statement"))?,
+            )),
+            Exit => Ok(Stmt::Exit(
+                self.parse_exit()
+                    .map_err(context("while parsing exit statement"))?,
+            )),
+            Decl => Ok(Stmt::Decl(
+                self.parse_decl()
+                    .map_err(context("while parsing declaration"))?,
+            )),
+            If => Ok(Stmt::If(
+                self.parse_if()
+                    .map_err(context("while parsing if statement"))?,
+            )),
             Var(_) => {
                 if self.peek_mult(2).t_type == Eq {
-                    return Stmt::Assign(self.parse_assign());
+                    return Ok(Stmt::Assign(
+                        self.parse_assign()
+                            .map_err(context("while parsing assignment"))?,
+                    ));
                 }
-                Stmt::Expr(crate::parser::StmtExpr {
-                    expr: self.parse_expr(),
-                })
+                Ok(Stmt::Expr(StmtExpr {
+                    expr: self.parse_expr()?,
+                }))
             }
-            Func => Stmt::Func(self.parse_func()),
-            For => Stmt::For(self.parse_for()),
-            Asm(_) => Stmt::Asm(self.parse_asm()),
+            Func => Ok(Stmt::Func(
+                self.parse_func()
+                    .map_err(context("while parsing function"))?,
+            )),
+            For => Ok(Stmt::For(
+                self.parse_for()
+                    .map_err(context("while parsing for loop"))?,
+            )),
+            Asm(_) => Ok(Stmt::Asm(self.parse_asm()?)),
             Semi => {
                 self.consume();
-                Stmt::Blank
+                Ok(Stmt::Blank)
             }
             Int(_) => {
                 if self.peek_mult(2).t_type == At {
                     self.consume();
-                    return Stmt::AssignAt(self.parse_assign_at());
+                    return Ok(Stmt::AssignAt(
+                        self.parse_assign_at()
+                            .map_err(context("while parsing assignment"))?,
+                    ));
                 }
-                Stmt::Expr(crate::parser::StmtExpr {
-                    expr: self.parse_expr(),
-                })
+                Ok(Stmt::Expr(StmtExpr {
+                    expr: self.parse_expr()?,
+                }))
             }
-            Use => Stmt::Use(self.parse_use()),
-            _ => Stmt::Expr(crate::parser::StmtExpr {
-                expr: self.parse_expr(),
-            }),
+            Use => Ok(Stmt::Use(
+                self.parse_use()
+                    .map_err(context("while parsing use statement"))?,
+            )),
+            _ => Ok(Stmt::Expr(StmtExpr {
+                expr: self.parse_expr()?,
+            })),
         }
     }
 
-    fn parse_mult(&mut self, tk: TokenType) -> Vec<Stmt> {
+    fn parse_mult(&mut self, tk: TokenType) -> Result<Vec<Stmt>, Error> {
         let mut stmts = Vec::new();
         loop {
             if self.peek().t_type == tk {
                 break;
             } else {
-                stmts.push(self.parse_stmt());
+                stmts.push(self.parse_stmt()?);
             }
         }
-        stmts
+        Ok(stmts)
     }
 
     pub fn parse(&mut self) {
-        self.parse_tree.stmts = self.parse_mult(Eof);
+        self.parse_tree.stmts = match self.parse_mult(Eof) {
+            Ok(stmts) => stmts,
+            Err(e) => {
+                panic!("{}", e.msg);
+            }
+        };
     }
 
     fn peek(&self) -> &Token {
+        // TODO unwrap here
         return self.tokens.peek().unwrap();
     }
 
     fn peek_mult(&self, n: usize) -> &Token {
+        // TODO unwrap here
         return self.tokens.peek_mult(n).unwrap();
     }
 
     fn consume(&mut self) -> Token {
+        // TODO unwrap here
         self.tokens.next().unwrap()
-    }
-
-    fn error(err: &str, token: &Token) -> ! {
-        panic!(
-            "{} at line {}",
-            err.replace("{}", &format!("'{}'", token.t_type)),
-            token.line,
-        );
     }
 }

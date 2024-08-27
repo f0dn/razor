@@ -1,6 +1,7 @@
+use crate::ERROR_SIZE;
 use std::{collections::LinkedList, fmt::Debug};
 
-use crate::tokenizer::Token;
+use crate::tokenizer::{Token, TokenType};
 
 pub struct TokenList {
     first: LinkedList<Token>,
@@ -10,18 +11,25 @@ pub struct TokenList {
 impl Debug for TokenList {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut last_line = 0;
-        for token in self.first.iter() {
+        let mut indent = 0;
+
+        for token in self
+            .first
+            .iter()
+            .chain(self.second.iter().rev().skip(1).rev())
+        {
             if token.line != last_line {
-                writeln!(f)?;
+                write!(f, "\n{:4}: ", token.line)?;
+                for _ in 0..indent {
+                    write!(f, "    ")?;
+                }
                 last_line = token.line;
             }
-            write!(f, "{:?} ", token)?;
-        }
 
-        for token in self.second.iter() {
-            if token.line != last_line {
-                writeln!(f)?;
-                last_line = token.line;
+            if token.t_type == TokenType::RBr {
+                indent -= 1;
+            } else if token.t_type == TokenType::LBr {
+                indent += 1;
             }
             write!(f, "{:?} ", token)?;
         }
@@ -50,6 +58,47 @@ impl TokenList {
             first: LinkedList::new(),
             second: LinkedList::new(),
         }
+    }
+
+    // TODO this is pretty ugly
+    pub fn error_context(&mut self) -> String {
+        let mut new_first = LinkedList::new();
+        let mut num_lines = 0;
+        let mut last_line = 0;
+        while num_lines < ERROR_SIZE {
+            if let Some(token) = self.first.pop_back() {
+                if token.line != last_line {
+                    num_lines += 1;
+                    last_line = token.line;
+                }
+                new_first.push_front(token);
+            } else {
+                new_first.push_front(Token {
+                    t_type: TokenType::Eof,
+                    line: 0,
+                });
+                break;
+            }
+        }
+        new_first.pop_front();
+
+        let mut new_second = LinkedList::new();
+        let mut num_lines = 0;
+        let mut last_line = 0;
+        while num_lines < ERROR_SIZE {
+            if let Some(token) = self.second.pop_front() {
+                if token.line != last_line {
+                    num_lines += 1;
+                    last_line = token.line;
+                }
+                new_second.push_back(token);
+            } else {
+                break;
+            }
+        }
+        self.first = new_first;
+        self.second = new_second;
+        format!("{:?}", self)
     }
 
     pub fn back(&mut self, n: usize) {
