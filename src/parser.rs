@@ -67,7 +67,7 @@ pub struct StmtFor {
 
 pub struct StmtFunc {
     pub ident: Identifier,
-    pub arg: Identifier,
+    pub params: Vec<Identifier>,
     pub stmts: Vec<Stmt>,
 }
 
@@ -102,7 +102,7 @@ pub struct BinOp {
 
 pub struct ExprCall {
     pub name: Identifier,
-    pub arg: Expr,
+    pub args: Vec<Expr>,
 }
 
 #[derive(Debug)]
@@ -228,7 +228,7 @@ parse_fn! {
 
 parse_fn! {
     parse_func -> StmtFunc {
-        {Func}, parse_ident_name() => ident, {LPar}, parse_ident_name() => arg, {RPar}, {LBr},
+        {Func}, parse_ident_name() => ident, {LPar}, parse_mult_ident(RPar) => params, {RPar}, {LBr},
             parse_mult(RBr) => stmts,
         {RBr},
     }
@@ -236,7 +236,7 @@ parse_fn! {
 
 parse_fn! {
     parse_call -> ExprCall {
-        , parse_ident_name() => name, {LPar}, parse_expr() => arg, {RPar},
+        , parse_ident_name() => name, {LPar}, parse_mult_expr(RPar) => args, {RPar},
     }
 }
 
@@ -453,6 +453,42 @@ impl Parser {
                 expr: self.parse_expr()?,
             })),
         }
+    }
+
+    fn parse_mult_ident(&mut self, tk: TokenType) -> Result<Vec<Identifier>, Error> {
+        let mut idents = Vec::new();
+        loop {
+            if self.peek().t_type == tk {
+                break;
+            } else {
+                idents.push(self.parse_ident_name()?);
+                if self.peek().t_type == tk {
+                    break;
+                }
+                if self.consume().t_type != Comma {
+                    error!(self.tokens, "Expected comma or {}, got {}", tk, &self.peek().t_type);
+                }
+            }
+        }
+        Ok(idents)
+    }
+
+    fn parse_mult_expr(&mut self, tk: TokenType) -> Result<Vec<Expr>, Error> {
+        let mut exprs = Vec::new();
+        loop {
+            if self.peek().t_type == tk {
+                break;
+            } else {
+                exprs.push(self.parse_expr()?);
+                if self.peek().t_type == tk {
+                    break;
+                }
+                if self.consume().t_type != Comma {
+                    error!(self.tokens, "Expected comma or {}, got {}", tk, &self.peek().t_type);
+                }
+            }
+        }
+        Ok(exprs)
     }
 
     fn parse_mult(&mut self, tk: TokenType) -> Result<Vec<Stmt>, Error> {

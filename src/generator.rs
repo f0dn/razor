@@ -3,6 +3,8 @@ use std::collections::HashSet;
 use crate::parser::*;
 use crate::tokenizer::TokenType::*;
 
+const REG_ARGS: [&str; 6] = ["rdi", "rsi", "rdx", "r10", "r8", "r9"];
+
 #[derive(PartialEq)]
 enum Type {
     Var,
@@ -136,10 +138,24 @@ impl<'a> Generator<'a> {
             }
             Expr::Call(expr_call) => {
                 self.ext.insert(expr_call.name.name.clone());
+                let num_args = expr_call.args.len();
+                if num_args > REG_ARGS.len() {
+                    panic!("Too many arguments for function '{}'", expr_call.name.name);
+                }
+                let mut args = String::new();
+                for arg in &expr_call.args {
+                    args.push_str(&self.gen_expr(arg));
+                    args.push('\n');
+                    args.push_str(&self.push("rax"));
+                    args.push('\n');
+                }
+                for reg in REG_ARGS.iter().take(num_args).rev() {
+                    args.push_str(&self.pop(reg));
+                    args.push('\n');
+                }
                 format!(
-                    "{call}
+                    "{args}
     call {name}",
-                    call = self.gen_expr(&expr_call.arg),
                     name = expr_call.name.name
                 )
             }
@@ -297,22 +313,30 @@ impl<'a> Generator<'a> {
             name: &stmt_func.ident.name,
             t: Type::Func,
         }));
-        self.stack.push(Some(Ident {
-            name: &stmt_func.arg.name,
-            t: Type::Var,
-        }));
+        let mut params = String::new();
+        for (i, param) in stmt_func.params.iter().enumerate() {
+            self.stack.push(Some(Ident {
+                name: &param.name,
+                t: Type::Var,
+            }));
+            let reg = REG_ARGS[i];
+            params.push_str(&format!("    push {reg}\n"));
+        }
         let (first, second) = self.gen_scope_split(&stmt_func.stmts);
-        self.stack.pop();
+        for _ in 0..stmt_func.params.len() {
+            self.stack.pop();
+        }
         let name = self.stack.pop().unwrap().unwrap().name;
         format!(
             "{begin_string}
-    push rax
+{params}
 {first}
 .return_{name}:
 {second}
-    add rsp, 8
+    add rsp, {offset}
     ret
-; Function End"
+; Function End",
+            offset = stmt_func.params.len() * 8
         )
     }
 

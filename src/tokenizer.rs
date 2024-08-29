@@ -50,6 +50,7 @@ pub enum TokenType {
     Lt,
     Gt,
     QMark,
+    Comma,
 
     // Literals
     Int(String),
@@ -114,6 +115,7 @@ impl fmt::Display for TokenType {
                 Lt => "<",
                 Gt => ">",
                 QMark => "?",
+                Comma => ",",
                 Int(val) => val,
                 Asm(val) => return write!(f, "`{}`", val),
                 Path(val) => return write!(f, "<{}>", val),
@@ -226,6 +228,7 @@ impl<'a> Tokenizer<'a> {
                     '(' => self.push_and_next(LPar),
                     ')' => self.push_and_next(RPar),
                     '?' => self.push_and_next(QMark),
+                    ',' => self.push_and_next(Comma),
                     '|' => self.tokenize_double('|', DPipe),
                     '=' => self.tokenize_single_or_double('=', Eq, DEq),
                     '&' => self.tokenize_single_or_double('&', Amp, DAmp),
