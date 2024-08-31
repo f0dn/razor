@@ -278,21 +278,29 @@ impl Preproc {
     fn process_macro_use(&mut self) -> MacroUse {
         self.consume_type(TokenType::Use);
 
-        let path = match self.consume().t_type {
-            TokenType::Path(path) => path,
-            token => panic!("Expected path, got {}", token),
-        };
+        let mut path = String::new();
 
-        self.consume_type(TokenType::Dot);
+        while let TokenType::Var(var) = self.consume().t_type {
+            match self.peek().unwrap().t_type {
+                TokenType::Dot => {
+                    path.push_str(&var);
+                    path.push('/');
+                    self.consume();
+                }
+                _ => {
+                    let id = var;
 
-        let id = match self.consume().t_type {
-            TokenType::Var(id) => id,
-            _ => panic!("Expected identifier"),
-        };
+                    path.pop();
 
-        self.consume_type(TokenType::Semi);
+                    path.push_str(".rz");
 
-        MacroUse { id, path }
+                    self.consume_type(TokenType::Semi);
+
+                    return MacroUse { id, path };
+                }
+            }
+        }
+        panic!("Expected identifier");
     }
 
     pub fn preprocess_uses(&mut self) -> Vec<MacroUse> {

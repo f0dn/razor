@@ -55,7 +55,6 @@ pub enum TokenType {
     // Literals
     Int(String),
     Asm(String),
-    Path(String),
 
     // Identifiers
     Var(String),
@@ -118,7 +117,6 @@ impl fmt::Display for TokenType {
                 Comma => ",",
                 Int(val) => val,
                 Asm(val) => return write!(f, "`{}`", val),
-                Path(val) => return write!(f, "<{}>", val),
                 Var(val) => val,
                 Eof => "end of file",
             }
@@ -216,6 +214,7 @@ impl<'a> Tokenizer<'a> {
             match self.peek() {
                 Some(ch) => match ch {
                     '>' => self.push_and_next(Gt),
+                    '<' => self.push_and_next(Lt),
                     '.' => self.push_and_next(Dot),
                     '{' => self.push_and_next(LBr),
                     '}' => self.push_and_next(RBr),
@@ -250,31 +249,6 @@ impl<'a> Tokenizer<'a> {
                         self.push_and_next(At);
                     }
                     // TODO fix all these
-                    '<' => {
-                        self.next();
-                        if self.tokens.peek_back().unwrap().t_type == Use {
-                            let mut path = String::new();
-                            loop {
-                                match self.peek() {
-                                    Some('>') => {
-                                        self.next();
-                                        break;
-                                    }
-                                    Some(ch) => {
-                                        if ch == '\n' || ch == '\r' {
-                                            self.line += 1;
-                                        }
-                                        path.push(ch);
-                                        self.next();
-                                    }
-                                    None => panic!("Unexpected EOF at line {}", self.line),
-                                }
-                            }
-                            self.push_token(Path(path));
-                        } else {
-                            self.push_token(Lt);
-                        }
-                    }
                     '`' => {
                         self.next();
                         let mut asm = String::new();

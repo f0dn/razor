@@ -81,8 +81,7 @@ pub struct StmtRet {
 }
 
 pub struct StmtUse {
-    pub path: String,
-    pub ident: Identifier,
+    pub path: Vec<Identifier>,
 }
 
 pub enum Expr {
@@ -101,7 +100,7 @@ pub struct BinOp {
 }
 
 pub struct ExprCall {
-    pub name: Identifier,
+    pub path: Vec<Identifier>,
     pub args: Vec<Expr>,
 }
 
@@ -147,7 +146,7 @@ macro_rules! error {
 macro_rules! parse_fn {
     ($name:ident -> $ret:ident {
         $($({$($tk:tt)|+}$( => $tk_field:ident)?)?,
-          $($func:ident($($arg:expr)?) => $func_field:ident,)?
+          $($func:ident($($arg:expr),*) => $func_field:ident,)?
         )+}
     ) => {
         impl Parser {
@@ -167,7 +166,7 @@ macro_rules! parse_fn {
                     )?
 
                     $(
-                        let $func_field = self.$func($($arg)?)?;
+                        let $func_field = self.$func($($arg),*)?;
                     )?
                 )+
 
@@ -228,7 +227,7 @@ parse_fn! {
 
 parse_fn! {
     parse_func -> StmtFunc {
-        {Func}, parse_ident_name() => ident, {LPar}, parse_mult_ident(RPar) => params, {RPar}, {LBr},
+        {Func}, parse_ident_name() => ident, {LPar}, parse_mult_ident(RPar, Comma) => params, {RPar}, {LBr},
             parse_mult(RBr) => stmts,
         {RBr},
     }
@@ -236,7 +235,7 @@ parse_fn! {
 
 parse_fn! {
     parse_call -> ExprCall {
-        , parse_ident_name() => name, {LPar}, parse_mult_expr(RPar) => args, {RPar},
+        , parse_mult_ident(LPar, Dot) => path, {LPar}, parse_mult_expr(RPar) => args, {RPar},
     }
 }
 
@@ -250,7 +249,7 @@ parse_fn! {
 
 parse_fn! {
     parse_use -> StmtUse {
-        {Use}, parse_path() => path, {Dot}, parse_ident_name() => ident, {Semi},
+        {Use}, parse_mult_ident(Semi, Dot) => path, {Semi},
     }
 }
 
@@ -274,14 +273,6 @@ impl Parser {
                 (DPipe, 0),
             ]),
             parse_tree: Prog { stmts: Vec::new() },
-        }
-    }
-
-    fn parse_path(&mut self) -> Result<String, Error> {
-        let tk = self.consume();
-        match tk.t_type {
-            Path(val) => Ok(val),
-            _ => error!(self.tokens, "Expected path, got {}", &tk.t_type),
         }
     }
 
@@ -311,7 +302,7 @@ impl Parser {
         match tk.t_type {
             Int(val) => Ok(Expr::Int(val)),
             Var(_) | Amp => {
-                if self.peek().t_type == LPar {
+                if self.peek().t_type == LPar || self.peek().t_type == Dot {
                     self.tokens.push_front(tk);
                     return Ok(Expr::Call(Box::new(
                         self.parse_call().map_err(err_context)?,
@@ -455,7 +446,7 @@ impl Parser {
         }
     }
 
-    fn parse_mult_ident(&mut self, tk: TokenType) -> Result<Vec<Identifier>, Error> {
+    fn parse_mult_ident(&mut self, tk: TokenType, sep: TokenType) -> Result<Vec<Identifier>, Error> {
         let mut idents = Vec::new();
         loop {
             if self.peek().t_type == tk {
@@ -465,7 +456,7 @@ impl Parser {
                 if self.peek().t_type == tk {
                     break;
                 }
-                if self.consume().t_type != Comma {
+                if self.consume().t_type != sep {
                     error!(self.tokens, "Expected comma or {}, got {}", tk, &self.peek().t_type);
                 }
             }

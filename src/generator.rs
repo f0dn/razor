@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::hash::{DefaultHasher, Hash, Hasher};
 
 use crate::parser::*;
 use crate::tokenizer::TokenType::*;
@@ -11,34 +12,53 @@ enum Type {
     Func,
 }
 
-struct Ident<'a> {
-    name: &'a String,
+struct Ident {
+    name: String,
     t: Type,
 }
 
 pub struct Generator<'a> {
     pub text: String,
+    file: &'a String,
     functions: String,
-    stack: Vec<Option<Ident<'a>>>,
+    stack: Vec<Option<Ident>>,
     scopes: Vec<usize>,
     num_jmps: usize,
     ext: HashSet<String>,
     global: String,
-    pub links: Vec<&'a String>,
+    imports: HashSet<Vec<String>>,
 }
 
 impl<'a> Generator<'a> {
-    pub fn new() -> Generator<'a> {
+    pub fn new(file: &'a String) -> Generator<'a> {
         Generator {
             text: String::from("section .text\n"),
+            file,
             functions: String::new(),
             stack: Vec::new(),
             scopes: Vec::new(),
             num_jmps: 0,
             ext: HashSet::new(),
             global: String::new(),
-            links: Vec::new(),
+            imports: HashSet::new(),
         }
+    }
+
+    pub fn links(&self) -> HashSet<String> {
+        self.imports.iter().map(|path| self.to_path(path)).collect()
+    }
+
+    fn to_path(&self, path: &[String]) -> String {
+        let mut path = path.join("/");
+        path.push_str(".rz");
+        path
+    }
+
+    fn hash_func(&mut self, path: &String, name: &String) -> String {
+        let path = format!("{}.{}", path, name);
+        let mut hasher = DefaultHasher::new();
+        path.hash(&mut hasher);
+        format!("func_{}", hasher.finish())
     }
 
     fn gen_expr(&mut self, expr: &'a Expr) -> String {
@@ -137,10 +157,33 @@ impl<'a> Generator<'a> {
                 )
             }
             Expr::Call(expr_call) => {
-                self.ext.insert(expr_call.name.name.clone());
+                let len = expr_call.path.len();
+                let name = &expr_call.path[len - 1].name;
+                let path = &expr_call
+                    .path
+                    .iter()
+                    .map(|ident| ident.name.clone())
+                    .collect::<Vec<String>>()[..len - 1];
+                let hashed_name = if path.is_empty() {
+                    self.hash_func(self.file, name)
+                } else {
+                    let mut hashed_name = None;
+                    for import in &self.imports {
+                        if import[import.len() - path.len()..] == *path {
+                            hashed_name = Some(self.hash_func(&self.to_path(import), name));
+                            break;
+                        }
+                    }
+                    match hashed_name {
+                        Some(hashed_name) => hashed_name,
+                        None => panic!("Unknown function '{}'", name),
+                    }
+                };
+
+                self.ext.insert(hashed_name.clone());
                 let num_args = expr_call.args.len();
                 if num_args > REG_ARGS.len() {
-                    panic!("Too many arguments for function '{}'", expr_call.name.name);
+                    panic!("Too many arguments for function '{}'", name);
                 }
                 let mut args = String::new();
                 for arg in &expr_call.args {
@@ -155,8 +198,7 @@ impl<'a> Generator<'a> {
                 }
                 format!(
                     "{args}
-    call {name}",
-                    name = expr_call.name.name
+    call {hashed_name}"
                 )
             }
             Expr::Asm(asm) => self.gen_asm(asm),
@@ -218,10 +260,16 @@ impl<'a> Generator<'a> {
     }
 
     fn gen_use(&mut self, stmt_use: &'a StmtUse) -> String {
-        self.ext.insert(stmt_use.ident.name.clone());
-        if !self.links.contains(&&stmt_use.path) {
-            self.links.push(&stmt_use.path);
+        let path = stmt_use
+            .path
+            .iter()
+            .map(|id| id.name.clone())
+            .collect::<Vec<String>>();
+        if self.imports.contains(&path) {
+            panic!("Duplicate import: {}", path.join("/"));
         }
+        self.imports.insert(path);
+
         String::new()
     }
 
@@ -268,7 +316,7 @@ impl<'a> Generator<'a> {
             expr = self.gen_expr(&stmt_decl.expr)
         );
         self.stack.push(Some(Ident {
-            name: &stmt_decl.var.name,
+            name: stmt_decl.var.name.clone(),
             t: Type::Var,
         }));
         format!(
@@ -302,21 +350,20 @@ impl<'a> Generator<'a> {
     }
 
     fn gen_func(&mut self, stmt_func: &'a StmtFunc) -> String {
-        self.global
-            .push_str(&format!("global {}\n", &stmt_func.ident.name));
+        let hashed_name = self.hash_func(self.file, &stmt_func.ident.name);
+        self.global.push_str(&format!("global {}\n", &hashed_name));
         let begin_string = format!(
             "; Function Start
-{name}:",
-            name = &stmt_func.ident.name
+{hashed_name}:"
         );
         self.stack.push(Some(Ident {
-            name: &stmt_func.ident.name,
+            name: hashed_name,
             t: Type::Func,
         }));
         let mut params = String::new();
         for (i, param) in stmt_func.params.iter().enumerate() {
             self.stack.push(Some(Ident {
-                name: &param.name,
+                name: param.name.clone(),
                 t: Type::Var,
             }));
             let reg = REG_ARGS[i];
@@ -326,12 +373,12 @@ impl<'a> Generator<'a> {
         for _ in 0..stmt_func.params.len() {
             self.stack.pop();
         }
-        let name = self.stack.pop().unwrap().unwrap().name;
+        let hashed_name = self.stack.pop().unwrap().unwrap().name;
         format!(
             "{begin_string}
 {params}
 {first}
-.return_{name}:
+.return_{hashed_name}:
 {second}
     add rsp, {offset}
     ret
@@ -463,7 +510,7 @@ _start:\n",
         for i in (func..self.stack.len()).rev() {
             match &self.stack[i] {
                 Some(id) => {
-                    if id.name == ident && id.t == t && id.name != "_" {
+                    if id.name == *ident && id.t == t && id.name != "_" {
                         return Some(i * 8);
                     }
                 }

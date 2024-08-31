@@ -120,11 +120,11 @@ impl Compiler {
         let mut parser = Parser::new(file_state.preproc.take_tokens());
         parser.parse();
 
-        let mut generator = Generator::new();
+        let mut generator = Generator::new(path);
         generator.gen(&parser.parse_tree, !is_main);
 
-        for link in generator.links {
-            self.compile_full(link, false);
+        for link in generator.links() {
+            self.compile_full(&link, false);
         }
 
         file_state.compiled_text = Some(generator.text);

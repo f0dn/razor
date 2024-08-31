@@ -113,10 +113,6 @@ impl TokenList {
         return self.second.front();
     }
 
-    pub fn peek_back(&self) -> Option<&Token> {
-        return self.first.back();
-    }
-
     pub fn peek_mult(&self, n: usize) -> Option<&Token> {
         return self.second.iter().nth(n - 1);
     }

@@ -37,9 +37,6 @@ exit
 ### INTEGER
 [0-9]+
 
-### PATH
-< .* >
-
 ### PROGRAM
 [STAT](#stat)*
 
@@ -88,7 +85,7 @@ exit
 [KW_FOR](#kw_for) [DECL](#decl) [EXPR](#expr) ; [ASSIGN](#assign) { [STAT](#stat)* }
 
 ### FUNC
-[KW_FUNC](#kw_func) [IDENT](#ident) ( [IDENT](#ident) ) { [STAT](#stat)* }
+[KW_FUNC](#kw_func) [IDENT](#ident) ( [IDENT](#ident),* ) { [STAT](#stat)* }
 
 ### IF
 [KW_IF](#kw_if) [EXPR](#expr) { [STAT](#stat)* }
@@ -96,11 +93,14 @@ exit
 ### RETURN
 [KW_RETURN](#kw_return) [EXPR](#expr) ;
 
+### PATH
+[IDENT](#ident).+
+
 ### USE
-[KW_USE](#kw_use) [PATH](#path) . [IDENT](#ident) ;
+[KW_USE](#kw_use) [PATH](#path) ;
 
 ### CALL
-[IDENT](#ident) ( [EXPR](#expr) )
+[IDENT](#ident) ( [EXPR](#expr),* )
 
 ### MACRO
 [KW_MAC](#kw_mac) [IDENT](#ident) ( [MACRO_ARG](#macro_arg)* ) { [MACRO_BODY](#macro_body)* # }
@@ -120,7 +120,7 @@ exit
 ( # [MACRO_BODY](#macro_body)* # )
 
 ### MACRO_USE
-\# [USE](#use) ;
+\# [USE](#use) . [IDENT](#ident) ;
 
 ### MACRO_VAR
 \# [IDENT](#ident)
