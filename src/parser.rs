@@ -85,12 +85,18 @@ pub struct StmtUse {
 }
 
 pub enum Expr {
-    Asm(String),
     BinOp(BinOp),
     Call(Box<ExprCall>),
     Id(Identifier),
-    Int(String),
+    Literal(ExprLiteral),
     Stmts(Vec<Stmt>),
+}
+
+pub enum ExprLiteral {
+    Int(String),
+    Str(String),
+    Char(char),
+    Asm(String),
 }
 
 pub struct BinOp {
@@ -300,7 +306,10 @@ impl Parser {
         let err_context = context("while parsing expression");
         let mut tk = self.consume();
         match tk.t_type {
-            Int(val) => Ok(Expr::Int(val)),
+            Int(val) => Ok(Expr::Literal(ExprLiteral::Int(val))),
+            Asm(val) => Ok(Expr::Literal(ExprLiteral::Asm(val))),
+            Str(val) => Ok(Expr::Literal(ExprLiteral::Str(val))),
+            Char(val) => Ok(Expr::Literal(ExprLiteral::Char(val))),
             Var(_) | Amp => {
                 if self.peek().t_type == LPar || self.peek().t_type == Dot {
                     self.tokens.push_front(tk);
@@ -327,7 +336,6 @@ impl Parser {
                     ),
                 }
             }
-            Asm(val) => Ok(Expr::Asm(val)),
             LPar => {
                 let expr = self.parse_expr().map_err(err_context)?;
                 let tk = self.consume();
@@ -446,7 +454,11 @@ impl Parser {
         }
     }
 
-    fn parse_mult_ident(&mut self, tk: TokenType, sep: TokenType) -> Result<Vec<Identifier>, Error> {
+    fn parse_mult_ident(
+        &mut self,
+        tk: TokenType,
+        sep: TokenType,
+    ) -> Result<Vec<Identifier>, Error> {
         let mut idents = Vec::new();
         loop {
             if self.peek().t_type == tk {
@@ -457,7 +469,12 @@ impl Parser {
                     break;
                 }
                 if self.consume().t_type != sep {
-                    error!(self.tokens, "Expected comma or {}, got {}", tk, &self.peek().t_type);
+                    error!(
+                        self.tokens,
+                        "Expected comma or {}, got {}",
+                        tk,
+                        &self.peek().t_type
+                    );
                 }
             }
         }
@@ -475,7 +492,12 @@ impl Parser {
                     break;
                 }
                 if self.consume().t_type != Comma {
-                    error!(self.tokens, "Expected comma or {}, got {}", tk, &self.peek().t_type);
+                    error!(
+                        self.tokens,
+                        "Expected comma or {}, got {}",
+                        tk,
+                        &self.peek().t_type
+                    );
                 }
             }
         }

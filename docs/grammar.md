@@ -34,6 +34,9 @@ exit
 ### STRING
 " .* "
 
+### CHAR
+' . '
+
 ### INTEGER
 [0-9]+
 
@@ -73,13 +76,17 @@ exit
 [KW_EXIT](#kw_exit) [EXPR](#expr) ;
 
 ### EXPR
-[ASM](#asm) \
-| [BIN_OP](#bin_op) \
+[BIN_OP](#bin_op) \
 | [CALL](#call) \
 | [&] [IDENT](#ident) \
-| [INTEGER](#integer) \
-| [STRING](#string) \
+| [LITERAL](#literal) \
 | { [STAT](#stat)* }
+
+### LITERAL
+[STRING](#string) \
+| [CHAR](#char) \
+| [INTEGER](#integer)
+| [ASM](#asm)
 
 ### FOR
 [KW_FOR](#kw_for) [DECL](#decl) [EXPR](#expr) ; [ASSIGN](#assign) { [STAT](#stat)* }

@@ -54,16 +54,52 @@ impl<'a> Generator<'a> {
         path
     }
 
-    fn hash_func(&mut self, path: &String, name: &String) -> String {
+    fn hash_func(&self, path: &String, name: &String) -> String {
         let path = format!("{}.{}", path, name);
         let mut hasher = DefaultHasher::new();
         path.hash(&mut hasher);
         format!("func_{}", hasher.finish())
     }
 
+    fn gen_literal(&mut self, literal: &'a ExprLiteral) -> String {
+        match literal {
+            ExprLiteral::Asm(asm) => self.gen_asm(asm),
+            ExprLiteral::Int(int) => format!("    mov rax, {}", int),
+            ExprLiteral::Char(char) => format!("    mov rax, {}", *char as u8),
+            // TODO use stack strings
+            ExprLiteral::Str(string) => {
+                let mut asm = format!(
+                    "    mov rax, 9
+    mov rsi, {total_len}
+    mov rdx, 3
+    mov r10, 33
+    mov r8, 255
+    mov r9, 0
+    syscall
+    mov QWORD [rax], {string_len}
+    mov QWORD [rax+8], {string_len}\n",
+                    total_len = string.len() + 17,
+                    string_len = string.len(),
+                );
+                for (i, c) in string.chars().enumerate() {
+                    asm.push_str(&format!(
+                        "    mov byte [rax+{offset}], {char}\n",
+                        offset = i + 16,
+                        char = c as u8
+                    ));
+                }
+                asm.push_str(&format!(
+                    "    mov byte [rax+{offset}], 0",
+                    offset = string.len() + 16
+                ));
+                asm
+            }
+        }
+    }
+
     fn gen_expr(&mut self, expr: &'a Expr) -> String {
         let expr_string = match expr {
-            Expr::Int(int) => format!("    mov rax, {int}"),
+            Expr::Literal(literal) => self.gen_literal(literal),
             Expr::Id(ident) => {
                 let loc = self.get_loc(&ident.name, Type::Var);
                 match loc {
@@ -201,7 +237,6 @@ impl<'a> Generator<'a> {
     call {hashed_name}"
                 )
             }
-            Expr::Asm(asm) => self.gen_asm(asm),
             Expr::Stmts(stmts) => self.gen_scope(stmts),
         };
         format!(
@@ -212,7 +247,7 @@ impl<'a> Generator<'a> {
         )
     }
 
-    fn gen_asm(&mut self, asm: &'a str) -> String {
+    fn gen_asm(&self, asm: &'a str) -> String {
         let mut split = asm.split('#');
         let mut string = split.next().unwrap().to_string();
         for part in split {

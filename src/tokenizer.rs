@@ -54,6 +54,8 @@ pub enum TokenType {
 
     // Literals
     Int(String),
+    Char(char),
+    Str(String),
     Asm(String),
 
     // Identifiers
@@ -116,6 +118,8 @@ impl fmt::Display for TokenType {
                 QMark => "?",
                 Comma => ",",
                 Int(val) => val,
+                Char(val) => return write!(f, "'{}'", val),
+                Str(val) => return write!(f, "\"{}\"", val),
                 Asm(val) => return write!(f, "`{}`", val),
                 Var(val) => val,
                 Eof => "end of file",
@@ -208,6 +212,76 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
+    fn tokenize_char(&mut self) {
+        self.next();
+        match self.peek() {
+            Some(ch) => {
+                if ch == '\n' || ch == '\r' {
+                    self.line += 1;
+                }
+                self.push_and_next(TokenType::Char(ch))
+            }
+            None => panic!("Unexpected EOF at line {}", self.line),
+        };
+        if self.peek() != Some('\'') {
+            panic!("Expected ' at line {}", self.line);
+        }
+        self.next();
+    }
+
+    fn tokenize_string(&mut self) {
+        self.next();
+        let mut string = String::new();
+        loop {
+            match self.peek() {
+                Some('\\') => {
+                    self.next();
+                    if self.peek() == Some('"') {
+                        self.next();
+                        string.push('"');
+                    } else {
+                        string.push('\\');
+                    }
+                }
+                Some('"') => {
+                    self.next();
+                    break;
+                }
+                Some(ch) => {
+                    if ch == '\n' || ch == '\r' {
+                        self.line += 1;
+                    }
+                    string.push(ch);
+                    self.next();
+                }
+                None => panic!("Unexpected EOF at line {}", self.line),
+            }
+        }
+        self.push_token(TokenType::Str(string));
+    }
+
+    fn tokenize_asm(&mut self) {
+        self.next();
+        let mut asm = String::new();
+        loop {
+            match self.peek() {
+                Some('`') => {
+                    self.next();
+                    break;
+                }
+                Some(ch) => {
+                    if ch == '\n' || ch == '\r' {
+                        self.line += 1;
+                    }
+                    asm.push(ch);
+                    self.next();
+                }
+                None => panic!("Unexpected EOF at line {}", self.line),
+            }
+        }
+        self.push_token(TokenType::Asm(asm));
+    }
+
     pub fn tokenize(&mut self) {
         use TokenType::*;
         loop {
@@ -248,82 +322,9 @@ impl<'a> Tokenizer<'a> {
                         self.push_token(Int(String::from("0")));
                         self.push_and_next(At);
                     }
-                    // TODO fix all these
-                    '`' => {
-                        self.next();
-                        let mut asm = String::new();
-                        loop {
-                            match self.peek() {
-                                Some('`') => {
-                                    self.next();
-                                    break;
-                                }
-                                Some(ch) => {
-                                    if ch == '\n' || ch == '\r' {
-                                        self.line += 1;
-                                    }
-                                    asm.push(ch);
-                                    self.next();
-                                }
-                                None => panic!("Unexpected EOF at line {}", self.line),
-                            }
-                        }
-                        self.push_token(Asm(asm));
-                    }
-                    '"' => {
-                        self.next();
-                        let mut chars = Vec::new();
-                        loop {
-                            match self.peek() {
-                                Some('\\') => {
-                                    self.next();
-                                    if self.peek() == Some('"') {
-                                        self.next();
-                                        chars.push('"');
-                                    } else {
-                                        chars.push('\\');
-                                    }
-                                }
-                                Some('"') => {
-                                    self.next();
-                                    break;
-                                }
-                                Some(ch) => {
-                                    if ch == '\n' || ch == '\r' {
-                                        self.line += 1;
-                                    }
-                                    chars.push(ch);
-                                    self.next();
-                                }
-                                None => panic!("Unexpected EOF at line {}", self.line),
-                            }
-                        }
-                        let mut asm = format!(
-                            "    \
-    mov rax, 9
-    mov rsi, {len1}
-    mov rdx, 3
-    mov r10, 33
-    mov r8, 255
-    mov r9, 0
-    syscall
-    mov QWORD [rax], {len2}\n",
-                            len1 = chars.len() + 9,
-                            len2 = chars.len()
-                        );
-                        for (i, ch) in chars.iter().enumerate() {
-                            asm.push_str(&format!(
-                                "    mov byte [rax + {offset}], {ch}\n",
-                                offset = i + 8,
-                                ch = *ch as u8
-                            ));
-                        }
-                        asm.push_str(&format!(
-                            "    mov byte [rax + {offset}], 0\n",
-                            offset = chars.len() + 8
-                        ));
-                        self.push_token(Asm(asm));
-                    }
+                    '\'' => self.tokenize_char(),
+                    '`' => self.tokenize_asm(),
+                    '"' => self.tokenize_string(),
                     ' ' => self.next(),
                     '\n' | '\r' => {
                         self.next();
