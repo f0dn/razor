@@ -1,0 +1,51 @@
+use std.mem;
+use std.str;
+
+func new() {
+    return newWithCap(10);
+}
+
+func newWithCap(cap) {
+    decl vec = mem.malloc((cap + 2) * 8);
+    @vec = cap;
+    @(vec + 8) = 0;
+    return vec;
+}
+
+func set(vec, i, val) {
+    @(@vec + (i + 2) * 8) = val;
+}
+
+func get(vec, i) {
+    return @(@vec + (i + 2) * 8);
+}
+
+func len(vec) {
+    return @(@vec + 8);
+}
+
+func cap(vec) {
+    return @(@vec);
+}
+
+func push(vec, val) {
+    decl len = len(vec);
+    decl cap = cap(vec);
+    if len == cap {
+        decl newCap = cap * 2;
+        decl newVec = newWithCap(newCap);
+        for decl i = 0; i < len; i = i + 1; {
+            set(&newVec, i, get(vec, i));
+        }
+        @vec = newVec;
+    }
+    set(vec, len, val);
+    @(@vec + 8) = len + 1;
+}
+
+func pop(vec) {
+    decl len = len(vec);
+    decl val = get(vec, len - 1);
+    @(@vec + 8) = len - 1;
+    return val;
+}

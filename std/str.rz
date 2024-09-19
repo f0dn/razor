@@ -1,0 +1,63 @@
+use std.mem;
+
+func newWithCap(cap) {
+    decl str = mem.malloc(cap + 17);
+    @str = cap;
+    @(str + 8) = 0;
+    set(&str, 0, 0);
+    return str;
+}
+
+func new() {
+    return newWithCap(10);
+}
+
+func set(str, i, char) {
+    decl addr = @str + 16 + i;
+    `
+    mov rcx, #addr
+    mov rax, #char
+    mov byte [rcx], al
+    `
+}
+
+func get(str, i) {
+    decl addr = @str + 16 + i;
+    `
+    mov rax, #addr
+    movzx rax, byte [rax]
+    `
+}
+
+func len(str) {
+    return @(@str + 8);
+}
+
+func cap(str) {
+    return @(@str);
+}
+
+func pushChar(str, char) {
+    decl len = len(str);
+    decl cap = cap(str);
+    if len == cap {
+        decl newCap = cap * 2;
+        decl newStr = newWithCap(newCap);
+        for decl i = 0; i < len; i = i + 1; {
+            decl c = get(str, i);
+            set(&newStr, i, c);
+        }
+        @str = newStr;
+    }
+    set(str, len, char);
+    set(str, len + 1, 0);
+    @(@str + 8) = len + 1;
+}
+
+func popChar(str) {
+    decl len = len(str);
+    decl char = get(str, len - 1);
+    set(str, len - 1, 0);
+    @(@str + 8) = len - 1;
+    return char;
+}

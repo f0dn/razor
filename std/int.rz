@@ -1,0 +1,22 @@
+use std.str;
+
+func toStr(num) {
+    decl n = num;
+    for decl i = 1; n; i = i + 1; {
+        n = n / 10;
+    }
+    i = i - 1;
+    if !num {
+        i = 1;
+    }
+
+    decl str = str.newWithCap(i);
+    @(str + 8) = i;
+    str.set(&str, i, 0);
+    for decl j = i; j > 0; j = j - 1; {
+        decl char = num % 10 + '0';
+        str.set(&str, j - 1, char);
+        num = num / 10;
+    }
+    return str;
+}

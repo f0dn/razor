@@ -1,0 +1,26 @@
+func get(arr, i) {
+    return @(arr - i * 8 - 8);
+}
+
+func set(arr, i, v) {
+    @(arr - i * 8 - 8) = v;
+}
+
+mac arr(({ _ x })) {
+    decl len = 0;
+    # (
+        decl _ = #x;
+    ) #
+    len = (&len - `
+    mov rax, rsp
+    ` - 8) / 8;
+    &len;
+#}
+
+func sum(arr) {
+    decl sum = 0;
+    for decl i = 0; i < @arr; i = i + 1; {
+        sum = sum + get(arr i);
+    }
+    return sum;
+}

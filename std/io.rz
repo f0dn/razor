@@ -1,0 +1,79 @@
+use std.mem;
+use std.str;
+
+func input(len) {
+    decl str = str.newWithCap(len);
+    `
+    mov rax, 0 ; read
+    mov rdi, 0 ; stdin
+    mov rsi, #str ; str
+    add rsi, 16
+    mov rdx, #len ; len
+    syscall
+    `
+    return str;
+}
+
+func print(str) {
+    decl len = str.len(&str);
+    `
+    mov rdx, #len ; len
+    mov rsi, #str ; str
+    add rsi, 16
+    mov rax, 1 ; print
+    mov rdi, 1 ; out
+    syscall
+    `
+}
+
+func printc(c) {
+    `
+    mov rdx, 1 ; len
+    lea rsi, #c ; str
+    mov rax, 1 ; print
+    mov rdi, 1 ; out
+    syscall
+    `
+}
+
+func println(str) {
+    print(str);
+    decl ln = '
+';
+    printc(ln);
+}
+
+func open(path) {
+    `
+    mov rax, 2 ; open
+    mov rdi, #path ; path
+    add rdi, 16
+    mov rsi, 2 ; read + write
+    syscall
+    `
+}
+
+func read(fd) {
+    decl len = len(fd);
+    decl buf = str.newWithCap(len);
+    `
+    mov rsi, #buf ; buf
+    add rsi, 16
+    mov rdi, #fd ; fd
+    mov rdx, #len ; count
+    mov rax, 0
+    syscall
+    `
+    return buf;
+}
+
+func len(fd) {
+    decl buf = mem.malloc(144);
+    `
+    mov rsi, #buf ; statbuf
+    mov rdi, #fd ; fd
+    mov rax, 5 ; fstat
+    syscall
+    `
+    return @(buf + 48);
+}

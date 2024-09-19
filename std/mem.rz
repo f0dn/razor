@@ -1,0 +1,11 @@
+func malloc(len) {
+    `
+    mov rax, 9 ; mmap
+    mov rsi, #len ; len
+    mov rdx, 3 ; r + w
+    mov r10, 33 ; anon + shared
+    mov r8, 255 ; no fd
+    mov r9, 0 ; no offset
+    syscall
+    `
+}
