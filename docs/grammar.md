@@ -7,6 +7,9 @@ decl
 ### KW_IF
 if
 
+### KW_ELSE
+else
+
 ### KW_FUNC
 func
 
@@ -95,7 +98,13 @@ exit
 [KW_FUNC](#kw_func) [IDENT](#ident) ( [IDENT](#ident),* ) { [STAT](#stat)* }
 
 ### IF
+[IF_BLOCK](#if_block) ([KW_ELSE](#kw_else) [IF_BLOCK](#if_block))* [ELSE_BLOCK](#else_block)?
+
+### IF_BLOCK
 [KW_IF](#kw_if) [EXPR](#expr) { [STAT](#stat)* }
+
+### ELSE_BLOCK
+[KW_ELSE](#kw_else) { [STAT](#stat)* }
 
 ### RETURN
 [KW_RETURN](#kw_return) [EXPR](#expr) ;

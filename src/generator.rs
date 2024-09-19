@@ -278,20 +278,32 @@ impl<'a> Generator<'a> {
     }
 
     fn gen_if(&mut self, stmt_if: &'a StmtIf) -> String {
-        let expr = self.gen_expr(&stmt_if.expr);
-        let scope = self.gen_scope(&stmt_if.stmts);
-        let string = format!(
-            "; If Start
+        let mut if_stmt = String::from("; If Start");
+        let final_jump = self.num_jmps + stmt_if.blocks.len();
+        for block in stmt_if.blocks.iter() {
+            if_stmt.push_str(&format!(
+                "
 {expr}
     test rax, rax
-    jz .if_{num_jmps}
+    jz .if_{jump_num}
 {scope}
-.if_{num_jmps}:
-; If End",
-            num_jmps = self.num_jmps,
-        );
-        self.num_jmps += 1;
-        string
+    jmp .if_{final_jump}
+.if_{jump_num}:",
+                expr = self.gen_expr(&block.expr),
+                scope = self.gen_scope(&block.stmts),
+                jump_num = self.num_jmps,
+            ));
+            self.num_jmps += 1;
+        }
+        if let Some(stmts) = &stmt_if.else_block {
+            if_stmt.push_str(&format!("\n{scope}", scope = self.gen_scope(stmts)));
+        }
+        if_stmt.push_str(&format!(
+            "
+.if_{final_jump}:
+; If End"
+        ));
+        if_stmt
     }
 
     fn gen_use(&mut self, stmt_use: &'a StmtUse) -> String {

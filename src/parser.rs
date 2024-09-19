@@ -72,6 +72,11 @@ pub struct StmtFunc {
 }
 
 pub struct StmtIf {
+    pub blocks: Vec<IfBlock>,
+    pub else_block: Option<Vec<Stmt>>,
+}
+
+pub struct IfBlock {
     pub expr: Expr,
     pub stmts: Vec<Stmt>,
 }
@@ -194,7 +199,7 @@ macro_rules! parse_fn {
 }
 
 parse_fn! {
-    parse_if -> StmtIf {
+    parse_if_block -> IfBlock {
         {If}, parse_expr() => expr, {LBr},
             parse_mult(RBr) => stmts,
         {RBr},
@@ -452,6 +457,35 @@ impl Parser {
                 expr: self.parse_expr()?,
             })),
         }
+    }
+
+    fn parse_if(&mut self) -> Result<StmtIf, Error> {
+        let mut blocks = Vec::new();
+        let mut else_block = None;
+
+        loop {
+            blocks.push(self.parse_if_block()?);
+            if self.peek().t_type != Else {
+                break;
+            }
+            self.consume();
+            if self.peek().t_type == If {
+                continue;
+            }
+            if self.consume().t_type != LBr {
+                error!(self.tokens, "Expected {}, got {}", LBr, &self.peek().t_type);
+            }
+            else_block = Some(self.parse_mult(RBr)?);
+            if self.consume().t_type != RBr {
+                error!(self.tokens, "Expected {}, got {}", RBr, &self.peek().t_type);
+            }
+            break;
+        }
+
+        Ok(StmtIf {
+            blocks,
+            else_block,
+        })
     }
 
     fn parse_mult_ident(
