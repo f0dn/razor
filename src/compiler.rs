@@ -163,8 +163,9 @@ impl Compiler {
 
         let files = &self
             .files
-            .keys()
-            .map(|path| format!("{}.o", path))
+            .iter()
+            .filter(|(_, state)| state.compiled_text.is_some())
+            .map(|(path, _)| format!("{}.o", path))
             .collect::<Vec<String>>();
 
         Command::new("ld")
