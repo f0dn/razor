@@ -62,6 +62,7 @@ impl TokenList {
 
     // TODO this is pretty ugly
     pub fn error_context(&mut self) -> String {
+        let line = self.peek().unwrap().line;
         let mut new_first = LinkedList::new();
         let mut num_lines = 0;
         let mut last_line = 0;
@@ -98,7 +99,7 @@ impl TokenList {
         }
         self.first = new_first;
         self.second = new_second;
-        format!("{:?}", self)
+        format!("{:?}\n at line {}", self, line)
     }
 
     pub fn back(&mut self, n: usize) {

@@ -1,13 +1,12 @@
 use std::collections::HashMap;
 
 use crate::{
-    tokenizer::{Token, TokenType},
-    tokenlist::TokenList,
+    path::UsePath, tokenizer::{Token, TokenType}, tokenlist::TokenList
 };
 
 pub struct MacroUse {
     pub id: String,
-    pub path: String,
+    pub path: UsePath,
 }
 
 pub struct Macro {
@@ -124,38 +123,26 @@ impl Preproc {
                         body.push(MacroBody::Token(token));
                     }
                 }
-                token @ Token {
-                    t_type: TokenType::LPar,
+                Token {
+                    t_type: TokenType::Hash,
                     line: _,
-                } => {
-                    if self.peek_type(&TokenType::Hash) {
+                } => match &self.peek().unwrap().t_type {
+                    TokenType::LPar => {
                         self.consume();
                         let mut repeat_body = Vec::new();
                         self.process_macro_body(&mut repeat_body);
                         body.push(MacroBody::Repeat(repeat_body));
-                    } else {
-                        body.push(MacroBody::Token(token));
                     }
-                }
-                hash @ Token {
-                    t_type: TokenType::Hash,
-                    line: _,
-                } => match &self.peek().unwrap().t_type {
                     TokenType::RPar => {
                         self.consume();
                         break;
                     }
                     TokenType::RBr => {
-                        body.push(MacroBody::Token(self.consume()));
                         break;
                     }
                     TokenType::Var(var) => {
                         body.push(MacroBody::Var(var.to_string()));
                         self.consume();
-                    }
-                    TokenType::LPar => {
-                        body.push(MacroBody::Token(hash));
-                        body.push(MacroBody::Token(self.consume()));
                     }
                     t_type => panic!("Unexpected {} after {}", t_type, TokenType::Hash),
                 },
@@ -221,7 +208,7 @@ impl Preproc {
         Some(MacroRepeat { vars, repeats })
     }
 
-    fn insert_macro_body(&mut self, body: &Vec<MacroBody>, repeat: &MacroRepeat) {
+    fn insert_macro_body(&mut self, body: &Vec<MacroBody>, repeat: &MacroRepeat, i: usize) {
         let mut repeats = repeat.repeats.iter();
         for token in body {
             match token {
@@ -230,9 +217,27 @@ impl Preproc {
                     self.num_tokens_added += 1;
                 }
                 MacroBody::Var(var) => {
-                    let var = repeat.vars.get(var).expect("Variable not found");
-                    self.tokens.push(var.clone());
-                    self.num_tokens_added += 1;
+                    if let Some(num) = var.strip_prefix("len") {
+                        let repeat_index = num
+                            .parse::<usize>()
+                            .expect("Expected number for length index");
+                        let len = repeat.repeats[repeat_index].len();
+                        self.tokens.push(Token {
+                            t_type: TokenType::Int(len.to_string()),
+                            line: 0,
+                        });
+                        self.num_tokens_added += 1;
+                    } else if var == "index" {
+                        self.tokens.push(Token {
+                            t_type: TokenType::Int(i.to_string()),
+                            line: 0,
+                        });
+                        self.num_tokens_added += 1;
+                    } else {
+                        let var = repeat.vars.get(var).expect("Variable not found");
+                        self.tokens.push(var.clone());
+                        self.num_tokens_added += 1;
+                    }
                 }
                 MacroBody::Repeat(body) => {
                     let macro_repeat = if let Some(repeat) = repeats.next() {
@@ -241,8 +246,8 @@ impl Preproc {
                         repeats = repeat.repeats.iter();
                         repeats.next().expect("No more repeats")
                     };
-                    for repeat in macro_repeat {
-                        self.insert_macro_body(body, repeat);
+                    for (i, repeat) in macro_repeat.iter().enumerate() {
+                        self.insert_macro_body(body, repeat, i);
                     }
                 }
             }
@@ -272,27 +277,22 @@ impl Preproc {
 
         self.consume_type(TokenType::RPar);
 
-        self.insert_macro_body(body, &vars);
+        self.insert_macro_body(body, &vars, 0);
     }
 
     fn process_macro_use(&mut self) -> MacroUse {
         self.consume_type(TokenType::Use);
 
-        let mut path = String::new();
+        let mut path = UsePath::new();
 
         while let TokenType::Var(var) = self.consume().t_type {
             match self.peek().unwrap().t_type {
                 TokenType::Dot => {
-                    path.push_str(&var);
-                    path.push('/');
+                    path.add(&var);
                     self.consume();
                 }
                 _ => {
                     let id = var;
-
-                    path.pop();
-
-                    path.push_str(".rz");
 
                     self.consume_type(TokenType::Semi);
 

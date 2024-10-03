@@ -4,11 +4,12 @@ mod TODO;
 mod compiler;
 mod generator;
 mod parser;
+mod path;
 mod preproc;
 mod tokenizer;
 mod tokenlist;
 
-const ERROR_SIZE: usize = 100;
+const ERROR_SIZE: usize = 5;
 
 fn main() {
     let mut args = args();

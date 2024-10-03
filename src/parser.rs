@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::path::UsePath;
 use crate::tokenizer::TokenType::*;
 use crate::tokenizer::*;
 use crate::tokenlist::TokenList;
@@ -10,7 +11,6 @@ pub struct Prog {
 
 pub struct Identifier {
     pub name: String,
-    pub line: usize,
     pub is_ref: bool,
 }
 
@@ -34,7 +34,7 @@ pub struct StmtAsm {
 }
 
 pub struct StmtAssign {
-    pub var: Identifier,
+    pub var: String,
     pub expr: Expr,
     pub assign: TokenType,
 }
@@ -46,7 +46,7 @@ pub struct StmtAssignAt {
 }
 
 pub struct StmtDecl {
-    pub var: Identifier,
+    pub var: String,
     pub expr: Expr,
 }
 
@@ -66,8 +66,8 @@ pub struct StmtFor {
 }
 
 pub struct StmtFunc {
-    pub ident: Identifier,
-    pub params: Vec<Identifier>,
+    pub ident: String,
+    pub params: Vec<String>,
     pub stmts: Vec<Stmt>,
 }
 
@@ -86,7 +86,7 @@ pub struct StmtRet {
 }
 
 pub struct StmtUse {
-    pub path: Vec<Identifier>,
+    pub path: UsePath,
 }
 
 pub enum Expr {
@@ -111,7 +111,8 @@ pub struct BinOp {
 }
 
 pub struct ExprCall {
-    pub path: Vec<Identifier>,
+    pub path: UsePath,
+    pub func: String,
     pub args: Vec<Expr>,
 }
 
@@ -157,7 +158,7 @@ macro_rules! error {
 macro_rules! parse_fn {
     ($name:ident -> $ret:ident {
         $($({$($tk:tt)|+}$( => $tk_field:ident)?)?,
-          $($func:ident($($arg:expr),*) => $func_field:ident,)?
+          $($func:ident($($arg:expr),*) => $($func_field:ident);+,)?
         )+}
     ) => {
         impl Parser {
@@ -177,7 +178,8 @@ macro_rules! parse_fn {
                     )?
 
                     $(
-                        let $func_field = self.$func($($arg),*)?;
+                        #[allow(unused_parens)]
+                        let ($($func_field),+) = self.$func($($arg),*)?;
                     )?
                 )+
 
@@ -189,7 +191,7 @@ macro_rules! parse_fn {
                             )?
                         )?
                         $(
-                            $func_field,
+                            $($func_field),+,
                         )?
                     )+
                 });
@@ -246,7 +248,7 @@ parse_fn! {
 
 parse_fn! {
     parse_call -> ExprCall {
-        , parse_mult_ident(LPar, Dot) => path, {LPar}, parse_mult_expr(RPar) => args, {RPar},
+        , parse_func_path() => path; func, {LPar}, parse_mult_expr(RPar) => args, {RPar},
     }
 }
 
@@ -260,7 +262,7 @@ parse_fn! {
 
 parse_fn! {
     parse_use -> StmtUse {
-        {Use}, parse_mult_ident(Semi, Dot) => path, {Semi},
+        {Use}, parse_use_path() => path, {Semi},
     }
 }
 
@@ -287,14 +289,10 @@ impl Parser {
         }
     }
 
-    fn parse_ident_name(&mut self) -> Result<Identifier, Error> {
+    fn parse_ident_name(&mut self) -> Result<String, Error> {
         let tk = self.consume();
         match tk.t_type {
-            Var(name) => Ok(Identifier {
-                name,
-                line: tk.line,
-                is_ref: false,
-            }),
+            Var(name) => Ok(name),
             _ => error!(self.tokens, "Expected identifier, got {}", &tk.t_type),
         }
     }
@@ -332,7 +330,6 @@ impl Parser {
                 match &tk.t_type {
                     Var(val) => Ok(Expr::Id(Identifier {
                         name: val.to_string(),
-                        line: tk.line,
                         is_ref,
                     })),
                     _ => error!(
@@ -482,17 +479,10 @@ impl Parser {
             break;
         }
 
-        Ok(StmtIf {
-            blocks,
-            else_block,
-        })
+        Ok(StmtIf { blocks, else_block })
     }
 
-    fn parse_mult_ident(
-        &mut self,
-        tk: TokenType,
-        sep: TokenType,
-    ) -> Result<Vec<Identifier>, Error> {
+    fn parse_mult_ident(&mut self, tk: TokenType, sep: TokenType) -> Result<Vec<String>, Error> {
         let mut idents = Vec::new();
         loop {
             if self.peek().t_type == tk {
@@ -513,6 +503,16 @@ impl Parser {
             }
         }
         Ok(idents)
+    }
+
+    fn parse_use_path(&mut self) -> Result<UsePath, Error> {
+        Ok(UsePath::from_vec(self.parse_mult_ident(Semi, Dot)?))
+    }
+
+    fn parse_func_path(&mut self) -> Result<(UsePath, String), Error> {
+        let mut vec = self.parse_mult_ident(LPar, Dot)?;
+        let func_name = vec.pop().unwrap();
+        Ok((UsePath::from_vec(vec), func_name))
     }
 
     fn parse_mult_expr(&mut self, tk: TokenType) -> Result<Vec<Expr>, Error> {

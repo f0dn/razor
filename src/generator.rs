@@ -1,7 +1,7 @@
 use std::collections::HashSet;
-use std::hash::{DefaultHasher, Hash, Hasher};
 
 use crate::parser::*;
+use crate::path::UsePath;
 use crate::tokenizer::TokenType::*;
 
 const REG_ARGS: [&str; 6] = ["rdi", "rsi", "rdx", "r10", "r8", "r9"];
@@ -19,21 +19,21 @@ struct Ident {
 
 pub struct Generator<'a> {
     pub text: String,
-    file: &'a String,
+    path: &'a UsePath,
     functions: String,
     stack: Vec<Option<Ident>>,
     scopes: Vec<usize>,
     num_jmps: usize,
     ext: HashSet<String>,
     global: String,
-    imports: HashSet<Vec<String>>,
+    imports: HashSet<UsePath>,
 }
 
 impl<'a> Generator<'a> {
-    pub fn new(file: &'a String) -> Generator<'a> {
+    pub fn new(file: &'a UsePath) -> Generator<'a> {
         Generator {
             text: String::from("section .text\n"),
-            file,
+            path: file,
             functions: String::new(),
             stack: Vec::new(),
             scopes: Vec::new(),
@@ -44,21 +44,8 @@ impl<'a> Generator<'a> {
         }
     }
 
-    pub fn links(&self) -> HashSet<String> {
-        self.imports.iter().map(|path| self.to_path(path)).collect()
-    }
-
-    fn to_path(&self, path: &[String]) -> String {
-        let mut path = path.join("/");
-        path.push_str(".rz");
-        path
-    }
-
-    fn hash_func(&self, path: &String, name: &String) -> String {
-        let path = format!("{}.{}", path, name);
-        let mut hasher = DefaultHasher::new();
-        path.hash(&mut hasher);
-        format!("func_{}", hasher.finish())
+    pub fn links(&self) -> &HashSet<UsePath> {
+        &self.imports
     }
 
     fn gen_literal(&mut self, literal: &'a ExprLiteral) -> String {
@@ -117,7 +104,7 @@ impl<'a> Generator<'a> {
                         }
                     }
                     None => {
-                        panic!("Unknown identifier '{}' at line {}", ident.name, ident.line)
+                        panic!("Unknown identifier '{}'", ident.name)
                     }
                 }
             }
@@ -193,33 +180,25 @@ impl<'a> Generator<'a> {
                 )
             }
             Expr::Call(expr_call) => {
-                let len = expr_call.path.len();
-                let name = &expr_call.path[len - 1].name;
-                let path = &expr_call
-                    .path
-                    .iter()
-                    .map(|ident| ident.name.clone())
-                    .collect::<Vec<String>>()[..len - 1];
-                let hashed_name = if path.is_empty() {
-                    self.hash_func(self.file, name)
+                let func_name = if expr_call.path.is_empty() {
+                    format!("{}.{}", self.path, expr_call.func)
                 } else {
-                    let mut hashed_name = None;
+                    let mut name = None;
                     for import in &self.imports {
-                        if import[import.len() - path.len()..] == *path {
-                            hashed_name = Some(self.hash_func(&self.to_path(import), name));
-                            break;
+                        if import.matches(&expr_call.path) {
+                            name = Some(format!("{}.{}", import.to_path(), expr_call.func));
                         }
                     }
-                    match hashed_name {
-                        Some(hashed_name) => hashed_name,
-                        None => panic!("Unknown function '{}'", name),
+                    match name {
+                        Some(name) => name,
+                        None => panic!("Unknown function '{}'", expr_call.func),
                     }
                 };
 
-                self.ext.insert(hashed_name.clone());
+                self.ext.insert(func_name.clone());
                 let num_args = expr_call.args.len();
                 if num_args > REG_ARGS.len() {
-                    panic!("Too many arguments for function '{}'", name);
+                    panic!("Too many arguments for function '{}'", func_name);
                 }
                 let mut args = String::new();
                 for arg in &expr_call.args {
@@ -234,7 +213,7 @@ impl<'a> Generator<'a> {
                 }
                 format!(
                     "{args}
-    call {hashed_name}"
+    call {func_name}"
                 )
             }
             Expr::Stmts(stmts) => self.gen_scope(stmts),
@@ -307,21 +286,16 @@ impl<'a> Generator<'a> {
     }
 
     fn gen_use(&mut self, stmt_use: &'a StmtUse) -> String {
-        let path = stmt_use
-            .path
-            .iter()
-            .map(|id| id.name.clone())
-            .collect::<Vec<String>>();
-        if self.imports.contains(&path) {
-            panic!("Duplicate import: {}", path.join("/"));
+        if self.imports.contains(&stmt_use.path) {
+            panic!("Duplicate import: {}", stmt_use.path.to_path());
         }
-        self.imports.insert(path);
+        self.imports.insert(stmt_use.path.clone());
 
         String::new()
     }
 
     fn gen_assign(&mut self, stmt_assign: &'a StmtAssign) -> String {
-        let loc = self.get_loc(&stmt_assign.var.name, Type::Var);
+        let loc = self.get_loc(&stmt_assign.var, Type::Var);
         match loc {
             Some(loc) => {
                 format!(
@@ -333,10 +307,7 @@ impl<'a> Generator<'a> {
                     offset = self.stack.len() * 8 - loc - 8
                 )
             }
-            None => panic!(
-                "Unknown identifier '{}' at line {}",
-                stmt_assign.var.name, stmt_assign.var.line
-            ),
+            None => panic!("Unknown identifier '{}'", stmt_assign.var),
         }
     }
 
@@ -363,7 +334,7 @@ impl<'a> Generator<'a> {
             expr = self.gen_expr(&stmt_decl.expr)
         );
         self.stack.push(Some(Ident {
-            name: stmt_decl.var.name.clone(),
+            name: stmt_decl.var.clone(),
             t: Type::Var,
         }));
         format!(
@@ -397,20 +368,20 @@ impl<'a> Generator<'a> {
     }
 
     fn gen_func(&mut self, stmt_func: &'a StmtFunc) -> String {
-        let hashed_name = self.hash_func(self.file, &stmt_func.ident.name);
-        self.global.push_str(&format!("global {}\n", &hashed_name));
+        let func_name = format!("{}.{}", self.path, &stmt_func.ident);
+        self.global.push_str(&format!("global {}\n", &func_name));
         let begin_string = format!(
             "; Function Start
-{hashed_name}:"
+{func_name}:"
         );
         self.stack.push(Some(Ident {
-            name: hashed_name,
+            name: func_name,
             t: Type::Func,
         }));
         let mut params = String::new();
         for (i, param) in stmt_func.params.iter().enumerate() {
             self.stack.push(Some(Ident {
-                name: param.name.clone(),
+                name: param.clone(),
                 t: Type::Var,
             }));
             let reg = REG_ARGS[i];

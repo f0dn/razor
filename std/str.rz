@@ -61,3 +61,11 @@ func popChar(str) {
     @(@str + 8) = len - 1;
     return char;
 }
+
+func push(str, str2) {
+    decl len = len(str2);
+    for decl i = 0; i < len; i = i + 1; {
+        decl c = get(str2, i);
+        pushChar(str, c);
+    }
+}

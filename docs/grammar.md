@@ -133,7 +133,7 @@ exit
 [IDENT](#ident) # ( .* )
 
 ### MACRO_REPEAT
-( # [MACRO_BODY](#macro_body)* # )
+\# ( [MACRO_BODY](#macro_body)* # )
 
 ### MACRO_USE
 \# [USE](#use) . [IDENT](#ident) ;

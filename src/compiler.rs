@@ -5,7 +5,7 @@ use std::{
     process::Command,
 };
 
-use crate::{generator::Generator, parser::Parser, preproc::Preproc, tokenizer::Tokenizer};
+use crate::{generator::Generator, parser::Parser, preproc::Preproc, tokenizer::Tokenizer, path::UsePath};
 
 struct FileState {
     preproc: Preproc,
@@ -13,8 +13,8 @@ struct FileState {
 }
 
 impl FileState {
-    fn new(path: &String) -> FileState {
-        let mut file = File::open(path).expect("Could not open file");
+    fn new(path: &UsePath) -> FileState {
+        let mut file = File::open(path.to_path()).expect("Could not open file");
 
         // TODO is this the way?
         let mut text = String::new();
@@ -35,7 +35,7 @@ impl FileState {
 }
 
 pub struct Compiler {
-    files: HashMap<String, FileState>,
+    files: HashMap<UsePath, FileState>,
 }
 
 impl Compiler {
@@ -45,7 +45,7 @@ impl Compiler {
         }
     }
 
-    fn compile_for_macros(&mut self, path: &String) {
+    fn compile_for_macros(&mut self, path: &UsePath) {
         if !self.files.contains_key(path) {
             let mut file_state = FileState::new(path);
 
@@ -80,7 +80,7 @@ impl Compiler {
         }
     }
 
-    fn compile_full(&mut self, path: &String, is_main: bool) {
+    fn compile_full(&mut self, path: &UsePath, is_main: bool) {
         let mut file_state = if let Some(file_state) = self.files.remove(path) {
             if file_state.compiled_text.is_some() {
                 self.files.insert(path.clone(), file_state);
@@ -124,16 +124,16 @@ impl Compiler {
         generator.gen(&parser.parse_tree, !is_main);
 
         for link in generator.links() {
-            self.compile_full(&link, false);
+            self.compile_full(link, false);
         }
 
         file_state.compiled_text = Some(generator.text);
 
-        self.files.insert(path.to_string(), file_state);
+        self.files.insert(path.clone(), file_state);
     }
 
-    pub fn compile(&mut self, path: &String, out_path: &String, keep_asm: bool) {
-        self.compile_full(path, true);
+    pub fn compile(&mut self, path: &str, out_path: &String, keep_asm: bool) {
+        self.compile_full(&UsePath::from_path(path), true);
 
         for (path, file_state) in &self.files {
             if let Some(compiled_text) = &file_state.compiled_text {
