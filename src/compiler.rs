@@ -137,12 +137,12 @@ impl Compiler {
 
         for (path, file_state) in &self.files {
             if let Some(compiled_text) = &file_state.compiled_text {
-                let asm_path = format!("{}.asm", path);
+                let asm_path = format!("{}.asm", path.to_path());
                 let mut out = File::create(&asm_path).expect("Can't create file");
                 out.write_all(compiled_text.as_bytes())
                     .expect("Can't write to file");
 
-                let object_path = format!("{}.o", path);
+                let object_path = format!("{}.o", path.to_path());
 
                 Command::new("nasm")
                     .args(["-f", "elf64"])
@@ -165,7 +165,7 @@ impl Compiler {
             .files
             .iter()
             .filter(|(_, state)| state.compiled_text.is_some())
-            .map(|(path, _)| format!("{}.o", path))
+            .map(|(path, _)| format!("{}.o", path.to_path()))
             .collect::<Vec<String>>();
 
         Command::new("ld")

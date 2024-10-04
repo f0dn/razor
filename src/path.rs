@@ -42,12 +42,14 @@ impl UsePath {
     }
 
     pub fn to_path(&self) -> String {
-        self.path.join(".")
+        let mut path = self.path.join("/");
+        path.push_str(".rz");
+        path
     }
 }
 
 impl Display for UsePath {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self.to_path())
+        write!(f, "{}", self.path.join("."))
     }
 }

@@ -51,8 +51,8 @@ impl<'a> Generator<'a> {
     fn gen_literal(&mut self, literal: &'a ExprLiteral) -> String {
         match literal {
             ExprLiteral::Asm(asm) => self.gen_asm(asm),
-            ExprLiteral::Int(int) => format!("    mov rax, {}", int),
-            ExprLiteral::Char(char) => format!("    mov rax, {}", *char as u8),
+            ExprLiteral::Int(int) => format!("    mov rax, {}\n", int),
+            ExprLiteral::Char(char) => format!("    mov rax, {}\n", *char as u8),
             // TODO use stack strings
             ExprLiteral::Str(string) => {
                 let mut asm = format!(
@@ -76,7 +76,7 @@ impl<'a> Generator<'a> {
                     ));
                 }
                 asm.push_str(&format!(
-                    "    mov byte [rax+{offset}], 0",
+                    "    mov byte [rax+{offset}], 0\n",
                     offset = string.len() + 16
                 ));
                 asm
@@ -93,12 +93,12 @@ impl<'a> Generator<'a> {
                     Some(loc) => {
                         if ident.is_ref {
                             format!(
-                                "    lea rax, [rsp+{offset}]",
+                                "    lea rax, [rsp+{offset}]\n",
                                 offset = self.stack.len() * 8 - loc - 8
                             )
                         } else {
                             format!(
-                                "    mov rax, QWORD [rsp+{offset}]",
+                                "    mov rax, QWORD [rsp+{offset}]\n",
                                 offset = self.stack.len() * 8 - loc - 8
                             )
                         }
@@ -110,22 +110,22 @@ impl<'a> Generator<'a> {
             }
             Expr::BinOp(bin_op) => {
                 let op = match bin_op.op {
-                    Plus => "    add rax, rcx",
-                    Dash => "    sub rax, rcx",
-                    Star => "    mul rcx",
+                    Plus => "    add rax, rcx\n",
+                    Dash => "    sub rax, rcx\n",
+                    Star => "    mul rcx\n",
                     Slash => {
                         "    mov edx, 0
-    div rcx"
+    div rcx\n"
                     }
                     Per => {
                         "    mov edx, 0
     div rcx
-    mov rax, rdx"
+    mov rax, rdx\n"
                     }
                     DEq => {
                         "    cmp rax, rcx
     setz al
-    movzx rax, al"
+    movzx rax, al\n"
                     }
                     DPipe => {
                         "    cmp rax, 0
@@ -134,7 +134,7 @@ impl<'a> Generator<'a> {
     setz ah
     and al, ah
     xor al, 0b00000001
-    movzx rax, al"
+    movzx rax, al\n"
                     }
                     DAmp => {
                         "    cmp rax, 0
@@ -143,12 +143,12 @@ impl<'a> Generator<'a> {
     setz ah
     or al, ah
     xor al, 0b00000001
-    movzx rax, al"
+    movzx rax, al\n"
                     }
                     Lt => {
                         "    cmp rax, rcx
     setc al
-    movzx rax, al"
+    movzx rax, al\n"
                     }
                     Gt => {
                         "    cmp rax, rcx
@@ -156,23 +156,19 @@ impl<'a> Generator<'a> {
     cmc
     setc ah
     xor al, ah
-    movzx rax, al"
+    movzx rax, al\n"
                     }
                     Ex => {
                         "    cmp rcx, 0
     setz al
-    movzx rax, al"
+    movzx rax, al\n"
                     }
-                    At => "    mov rax, [rcx]",
+                    At => "    mov rax, [rcx]\n",
                     _ => panic!("Unknown operator: {}", bin_op.op),
                 };
                 format!(
-                    "{lhs}
-{push}
-{rhs}
-    mov rcx, rax
-{pop}
-{op}",
+                    "{lhs}{push}{rhs}    mov rcx, rax
+{pop}{op}",
                     lhs = self.gen_expr(&bin_op.lhs),
                     push = self.push("rax"),
                     rhs = self.gen_expr(&bin_op.rhs),
@@ -186,7 +182,7 @@ impl<'a> Generator<'a> {
                     let mut name = None;
                     for import in &self.imports {
                         if import.matches(&expr_call.path) {
-                            name = Some(format!("{}.{}", import.to_path(), expr_call.func));
+                            name = Some(format!("{}.{}", import, expr_call.func));
                         }
                     }
                     match name {
@@ -203,26 +199,20 @@ impl<'a> Generator<'a> {
                 let mut args = String::new();
                 for arg in &expr_call.args {
                     args.push_str(&self.gen_expr(arg));
-                    args.push('\n');
                     args.push_str(&self.push("rax"));
-                    args.push('\n');
                 }
                 for reg in REG_ARGS.iter().take(num_args).rev() {
                     args.push_str(&self.pop(reg));
-                    args.push('\n');
                 }
                 format!(
-                    "{args}
-    call {func_name}"
+                    "{args}    call {func_name}\n"
                 )
             }
             Expr::Stmts(stmts) => self.gen_scope(stmts),
         };
         format!(
-            "\
-; Expression Start
-{expr_string}
-; Expression End",
+            "; Expression Start
+{expr_string}; Expression End\n",
         )
     }
 
@@ -257,17 +247,14 @@ impl<'a> Generator<'a> {
     }
 
     fn gen_if(&mut self, stmt_if: &'a StmtIf) -> String {
-        let mut if_stmt = String::from("; If Start");
+        let mut if_stmt = String::from("; If Start\n");
         let final_jump = self.num_jmps + stmt_if.blocks.len();
         for block in stmt_if.blocks.iter() {
             if_stmt.push_str(&format!(
-                "
-{expr}
-    test rax, rax
+                "{expr}    test rax, rax
     jz .if_{jump_num}
-{scope}
-    jmp .if_{final_jump}
-.if_{jump_num}:",
+{scope}    jmp .if_{final_jump}
+.if_{jump_num}:\n",
                 expr = self.gen_expr(&block.expr),
                 scope = self.gen_scope(&block.stmts),
                 jump_num = self.num_jmps,
@@ -275,19 +262,18 @@ impl<'a> Generator<'a> {
             self.num_jmps += 1;
         }
         if let Some(stmts) = &stmt_if.else_block {
-            if_stmt.push_str(&format!("\n{scope}", scope = self.gen_scope(stmts)));
+            if_stmt.push_str(&self.gen_scope(stmts));
         }
         if_stmt.push_str(&format!(
-            "
-.if_{final_jump}:
-; If End"
+            ".if_{final_jump}:
+; If End\n"
         ));
         if_stmt
     }
 
     fn gen_use(&mut self, stmt_use: &'a StmtUse) -> String {
         if self.imports.contains(&stmt_use.path) {
-            panic!("Duplicate import: {}", stmt_use.path.to_path());
+            panic!("Duplicate import: {}", stmt_use.path);
         }
         self.imports.insert(stmt_use.path.clone());
 
@@ -300,9 +286,8 @@ impl<'a> Generator<'a> {
             Some(loc) => {
                 format!(
                     "; Assign Start
-{expr}
-    mov QWORD [rsp+{offset}], rax
-; Assign End",
+{expr}    mov QWORD [rsp+{offset}], rax
+; Assign End\n",
                     expr = self.gen_expr(&stmt_assign.expr),
                     offset = self.stack.len() * 8 - loc - 8
                 )
@@ -315,12 +300,8 @@ impl<'a> Generator<'a> {
         let var = self.gen_expr(&stmt_assign_at.var);
         format!(
             "; Assign At Start
-{var}
-{push}
-{expr}
-{pop}
-    mov QWORD [rcx], rax
-; Assign At End",
+{var}{push}{expr}{pop}    mov QWORD [rcx], rax
+; Assign At End\n",
             push = self.push("rax"),
             expr = self.gen_expr(&stmt_assign_at.expr),
             pop = self.pop("rcx")
@@ -338,31 +319,29 @@ impl<'a> Generator<'a> {
             t: Type::Var,
         }));
         format!(
-            "{begin_string}
-    push rax
-; Declaration End",
+            "{begin_string}    push rax
+; Declaration End\n",
         )
     }
 
     fn gen_ret(&mut self, stmt_ret: &'a StmtRet) -> String {
         let expr = self.gen_expr(&stmt_ret.expr);
-        let name = &self.stack[self.get_func()].as_ref().unwrap().name;
         format!(
             "; Return Start
-{expr}
-    jmp .return_{name}
-; Return End",
+{expr}    add rsp, {offset}
+    ret
+; Return End\n",
+            offset = (self.stack.len() - self.get_func() - 1) * 8,
         )
     }
 
     fn gen_exit(&mut self, stmt_exit: &'a StmtExit) -> String {
         format!(
             "; Exit Start
-{expr}
-    mov rdi, rax
+{expr}    mov rdi, rax
     mov rax, 60
     syscall
-; Exit End",
+; Exit End\n",
             expr = self.gen_expr(&stmt_exit.expr)
         )
     }
@@ -372,7 +351,7 @@ impl<'a> Generator<'a> {
         self.global.push_str(&format!("global {}\n", &func_name));
         let begin_string = format!(
             "; Function Start
-{func_name}:"
+{func_name}:\n"
         );
         self.stack.push(Some(Ident {
             name: func_name,
@@ -391,16 +370,11 @@ impl<'a> Generator<'a> {
         for _ in 0..stmt_func.params.len() {
             self.stack.pop();
         }
-        let hashed_name = self.stack.pop().unwrap().unwrap().name;
+        self.stack.pop();
         format!(
-            "{begin_string}
-{params}
-{first}
-.return_{hashed_name}:
-{second}
-    add rsp, {offset}
+            "{begin_string}{params}{first}{second}    add rsp, {offset}
     ret
-; Function End",
+; Function End\n",
             offset = stmt_func.params.len() * 8
         )
     }
@@ -410,16 +384,12 @@ impl<'a> Generator<'a> {
         self.num_jmps += 2;
         let begin_string = format!(
             "; For Start
-{init}
-.for_{start_num}:
-{expr}
-    test rax, rax
+{init}.for_{start_num}:
+{expr}    test rax, rax
     jz .for_{end_num}
-{scope}
-{iter}
-    jmp .for_{start_num}
+{scope}{iter}    jmp .for_{start_num}
 .for_{end_num}:
-; For End",
+; For End\n",
             init = self.gen_decl(&stmt_for.init),
             expr = self.gen_expr(&stmt_for.cond),
             start_num = num_jmps,
@@ -439,7 +409,6 @@ impl<'a> Generator<'a> {
         self.scopes.push(self.stack.len());
         let mut stmt_string = String::new();
         for stmt in stmts {
-            stmt_string.push('\n');
             let stmt = match stmt {
                 Stmt::Ret(stmt_ret) => self.gen_ret(stmt_ret),
                 Stmt::Exit(stmt_exit) => self.gen_exit(stmt_exit),
@@ -473,9 +442,8 @@ impl<'a> Generator<'a> {
 {stmt_string}"
             ),
             format!(
-                "
-add rsp, {offset}
-; Scope End",
+                "    add rsp, {offset}
+; Scope End\n",
                 offset = scope_len * 8
             ),
         )
@@ -487,7 +455,6 @@ add rsp, {offset}
         for ext in &self.ext {
             self.text.push_str(&format!("extern {}\n", ext));
         }
-        self.text.push('\n');
         if !lib {
             self.text.push_str(
                 "global _start
@@ -495,18 +462,17 @@ _start:\n",
             );
         }
         self.text.push_str(&scope);
-        self.text.push('\n');
         self.text.push_str(&self.functions);
     }
 
     fn push(&mut self, reg: &str) -> String {
         self.stack.push(None);
-        format!("    push {}", reg)
+        format!("    push {}\n", reg)
     }
 
     fn pop(&mut self, reg: &str) -> String {
         self.stack.pop();
-        format!("    pop {}", reg)
+        format!("    pop {}\n", reg)
     }
 
     fn get_func(&self) -> usize {
