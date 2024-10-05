@@ -5,7 +5,9 @@ use std::{
     process::Command,
 };
 
-use crate::{generator::Generator, parser::Parser, preproc::Preproc, tokenizer::Tokenizer, path::UsePath};
+use crate::{
+    generator::Generator, parser::Parser, path::UsePath, preproc::Preproc, tokenizer::Tokenizer,
+};
 
 struct FileState {
     preproc: Preproc,

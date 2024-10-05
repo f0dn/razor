@@ -1,31 +1,21 @@
 use std::collections::HashSet;
 
 mod label;
+mod stack;
 
 use crate::parser::*;
 use crate::path::UsePath;
 use crate::tokenizer::TokenType::*;
 use label::LabelGen;
+use stack::Stack;
 
 const REG_ARGS: [&str; 6] = ["rdi", "rsi", "rdx", "r10", "r8", "r9"];
-
-#[derive(PartialEq)]
-enum Type {
-    Var,
-    Func,
-}
-
-struct Ident {
-    name: String,
-    t: Type,
-}
 
 pub struct Generator<'a> {
     pub text: String,
     path: &'a UsePath,
     functions: String,
-    stack: Vec<Option<Ident>>,
-    scopes: Vec<usize>,
+    stack: Stack,
     for_counter: LabelGen,
     if_counter: LabelGen,
     if_end_counter: LabelGen,
@@ -54,8 +44,7 @@ impl<'a> Generator<'a> {
             text: String::from("section .text\n"),
             path: file,
             functions: String::new(),
-            stack: Vec::new(),
-            scopes: Vec::new(),
+            stack: Stack::new(),
             for_counter: LabelGen::new("for"),
             if_counter: LabelGen::new("if"),
             if_end_counter: LabelGen::new("if_end"),
@@ -107,19 +96,13 @@ impl<'a> Generator<'a> {
         let expr_string = match expr {
             Expr::Literal(literal) => self.gen_literal(literal),
             Expr::Id(ident) => {
-                let loc = self.get_loc(&ident.name, Type::Var);
+                let loc = self.stack.get(&ident.name);
                 match loc {
                     Some(loc) => {
                         if ident.is_ref {
-                            asm!(
-                                > "lea rax, [rsp+{}]",
-                                self.stack.len() * 8 - loc - 8
-                            )
+                            asm!(> "lea rax, [rsp+{}]", loc)
                         } else {
-                            asm!(
-                                > "mov rax, QWORD [rsp+{}]",
-                                self.stack.len() * 8 - loc - 8
-                            )
+                            asm!(> "mov rax, QWORD [rsp+{}]", loc)
                         }
                     }
                     None => {
@@ -252,14 +235,9 @@ impl<'a> Generator<'a> {
                     _ => break,
                 }
             }
-            let loc = self.get_loc(&var, Type::Var);
+            let loc = self.stack.get(&var);
             match loc {
-                Some(loc) => {
-                    string.push_str(&format!(
-                        "[rsp+{offset}]",
-                        offset = self.stack.len() * 8 - loc - 8
-                    ));
-                }
+                Some(loc) => string.push_str(&format!("[rsp+{loc}]")),
                 None => panic!("Unknown identifier '{}'", var),
             }
             string.push_str(&part[end..]);
@@ -303,13 +281,13 @@ impl<'a> Generator<'a> {
     }
 
     fn gen_assign(&mut self, stmt_assign: &'a StmtAssign) -> String {
-        let loc = self.get_loc(&stmt_assign.var, Type::Var);
+        let loc = self.stack.get(&stmt_assign.var);
         match loc {
             Some(loc) => {
                 asm!(
                     "; Assign Start";
                     {self.gen_expr(&stmt_assign.expr)};
-                    > "mov QWORD [rsp+{}], rax", self.stack.len() * 8 - loc - 8;
+                    > "mov QWORD [rsp+{}], rax", loc;
                     "; Assign End";
                 )
             }
@@ -334,10 +312,7 @@ impl<'a> Generator<'a> {
             "; Declaration Start";
             {self.gen_expr(&stmt_decl.expr)};
         );
-        self.stack.push(Some(Ident {
-            name: stmt_decl.var.clone(),
-            t: Type::Var,
-        }));
+        self.stack.push(stmt_decl.var.clone(), 8);
         asm!(
             {begin_string};
             > "push rax";
@@ -349,7 +324,7 @@ impl<'a> Generator<'a> {
         asm!(
             "; Return Start";
             {self.gen_expr(&stmt_ret.expr)};
-            > "add rsp, {}", (self.stack.len() - self.get_func() - 1) * 8;
+            > "add rsp, {}", self.stack.get_func().unwrap();
             > "ret";
             "; Return End";
         )
@@ -373,16 +348,10 @@ impl<'a> Generator<'a> {
             "; Function Start";
             "{}:", func_name;
         );
-        self.stack.push(Some(Ident {
-            name: func_name,
-            t: Type::Func,
-        }));
+        self.stack.push_func();
         let mut params = String::new();
         for (i, param) in stmt_func.params.iter().enumerate() {
-            self.stack.push(Some(Ident {
-                name: param.clone(),
-                t: Type::Var,
-            }));
+            self.stack.push(param.clone(), 8);
             let reg = REG_ARGS[i];
             params.push_str(&asm!(> "push {}", reg));
         }
@@ -420,7 +389,7 @@ impl<'a> Generator<'a> {
     }
 
     fn gen_scope(&mut self, stmts: &'a Vec<Stmt>) -> String {
-        self.scopes.push(self.stack.len());
+        self.stack.push_scope();
         let mut stmt_string = String::new();
         for stmt in stmts {
             let stmt = match stmt {
@@ -446,14 +415,11 @@ impl<'a> Generator<'a> {
             };
             stmt_string.push_str(&stmt);
         }
-        let scope_len = self.stack.len() - self.scopes.pop().unwrap();
-        for _ in 0..scope_len {
-            self.stack.pop();
-        }
+        let scope_len = self.stack.pop_until_scope();
         asm!(
             "; Scope Start";
             {stmt_string};
-            > "add rsp, {}", scope_len * 8;
+            > "add rsp, {}", scope_len;
             "; Scope End";
         )
     }
@@ -475,43 +441,12 @@ impl<'a> Generator<'a> {
     }
 
     fn push(&mut self, reg: &str) -> String {
-        self.stack.push(None);
+        self.stack.push_none();
         asm!(> "push {}", reg)
     }
 
     fn pop(&mut self, reg: &str) -> String {
         self.stack.pop();
         asm!(> "pop {}", reg)
-    }
-
-    // TODO i think this sucks
-    fn get_func(&self) -> usize {
-        for i in (0..self.stack.len()).rev() {
-            match &self.stack[i] {
-                Some(id) => {
-                    if id.t == Type::Func {
-                        return i;
-                    }
-                }
-                None => continue,
-            }
-        }
-        0
-    }
-
-    // TODO i think this sucks
-    fn get_loc(&self, ident: &String, t: Type) -> Option<usize> {
-        let func = self.get_func();
-        for i in (func..self.stack.len()).rev() {
-            match &self.stack[i] {
-                Some(id) => {
-                    if id.name == *ident && id.t == t && id.name != "_" {
-                        return Some(i * 8);
-                    }
-                }
-                None => continue,
-            }
-        }
-        None
     }
 }
