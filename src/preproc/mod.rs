@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use crate::{
     path::UsePath,
+    tokenizer::tokenlist::TokenList,
     tokenizer::{Token, TokenType},
-    tokenlist::TokenList,
 };
 
 pub struct MacroUse {
@@ -245,7 +245,10 @@ impl Preproc {
                         });
                         self.num_tokens_added += 1;
                     } else {
-                        let var = repeat.vars.get(var).unwrap_or_else(|| panic!("Variable {} not found", var));
+                        let var = repeat
+                            .vars
+                            .get(var)
+                            .unwrap_or_else(|| panic!("Variable {} not found", var));
                         self.tokens.push(var.clone());
                         self.num_tokens_added += 1;
                     }

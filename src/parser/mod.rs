@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::path::UsePath;
 use crate::tokenizer::TokenType::*;
 use crate::tokenizer::*;
-use crate::tokenlist::TokenList;
+use crate::tokenizer::tokenlist::TokenList;
 
 pub struct Prog {
     pub stmts: Vec<Stmt>,

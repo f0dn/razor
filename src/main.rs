@@ -3,12 +3,10 @@ use std::env::args;
 mod TODO;
 mod compiler;
 mod generator;
-mod label;
 mod parser;
 mod path;
 mod preproc;
 mod tokenizer;
-mod tokenlist;
 
 const ERROR_SIZE: usize = 5;
 

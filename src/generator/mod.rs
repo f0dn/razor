@@ -1,9 +1,11 @@
 use std::collections::HashSet;
 
-use crate::label::LabelGen;
+mod label;
+
 use crate::parser::*;
 use crate::path::UsePath;
 use crate::tokenizer::TokenType::*;
+use label::LabelGen;
 
 const REG_ARGS: [&str; 6] = ["rdi", "rsi", "rdx", "r10", "r8", "r9"];
 

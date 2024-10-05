@@ -1,7 +1,9 @@
 use core::fmt;
 use std::{hash::Hash, iter::Peekable, str::Chars};
 
-use crate::tokenlist::TokenList;
+pub mod tokenlist;
+
+use crate::tokenizer::tokenlist::TokenList;
 
 #[derive(Clone)]
 pub struct Token {
