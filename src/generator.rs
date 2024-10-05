@@ -384,7 +384,7 @@ impl<'a> Generator<'a> {
             let reg = REG_ARGS[i];
             params.push_str(&asm!(> "push {}", reg));
         }
-        let (first, second) = self.gen_scope_split(&stmt_func.stmts);
+        let scope = self.gen_scope(&stmt_func.stmts);
         for _ in 0..stmt_func.params.len() {
             self.stack.pop();
         }
@@ -392,8 +392,7 @@ impl<'a> Generator<'a> {
         asm!(
             {begin_string};
             {params};
-            {first};
-            {second};
+            {scope};
             > "add rsp, {}", stmt_func.params.len() * 8;
             > "ret";
             "; Function End\n";
@@ -419,11 +418,6 @@ impl<'a> Generator<'a> {
     }
 
     fn gen_scope(&mut self, stmts: &'a Vec<Stmt>) -> String {
-        let (first, second) = self.gen_scope_split(stmts);
-        first + &second
-    }
-
-    fn gen_scope_split(&mut self, stmts: &'a Vec<Stmt>) -> (String, String) {
         self.scopes.push(self.stack.len());
         let mut stmt_string = String::new();
         for stmt in stmts {
@@ -454,15 +448,11 @@ impl<'a> Generator<'a> {
         for _ in 0..scope_len {
             self.stack.pop();
         }
-        (
-            asm!(
-                "; Scope Start";
-                {stmt_string};
-            ),
-            asm!(
-                > "add rsp, {}", scope_len * 8;
-                "; Scope End";
-            ),
+        asm!(
+            "; Scope Start";
+            {stmt_string};
+            > "add rsp, {}", scope_len * 8;
+            "; Scope End";
         )
     }
 
