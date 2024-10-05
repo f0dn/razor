@@ -14,7 +14,12 @@ struct FileState {
 
 impl FileState {
     fn new(path: &UsePath) -> FileState {
-        let mut file = File::open(path.to_path()).expect("Could not open file");
+        let path = if path.first() == Some(&String::from("std")) {
+            String::from("/usr/share/razor/") + &path.to_path()
+        } else {
+            path.to_path()
+        };
+        let mut file = File::open(path).expect("Could not open file");
 
         // TODO is this the way?
         let mut text = String::new();
@@ -137,12 +142,12 @@ impl Compiler {
 
         for (path, file_state) in &self.files {
             if let Some(compiled_text) = &file_state.compiled_text {
-                let asm_path = format!("{}.asm", path.to_path());
+                let asm_path = format!("{}.asm", path);
                 let mut out = File::create(&asm_path).expect("Can't create file");
                 out.write_all(compiled_text.as_bytes())
                     .expect("Can't write to file");
 
-                let object_path = format!("{}.o", path.to_path());
+                let object_path = format!("{}.o", path);
 
                 Command::new("nasm")
                     .args(["-f", "elf64"])
@@ -165,7 +170,7 @@ impl Compiler {
             .files
             .iter()
             .filter(|(_, state)| state.compiled_text.is_some())
-            .map(|(path, _)| format!("{}.o", path.to_path()))
+            .map(|(path, _)| format!("{}.o", path))
             .collect::<Vec<String>>();
 
         Command::new("ld")

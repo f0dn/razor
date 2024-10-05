@@ -3,6 +3,7 @@ use std::env::args;
 mod TODO;
 mod compiler;
 mod generator;
+mod label;
 mod parser;
 mod path;
 mod preproc;

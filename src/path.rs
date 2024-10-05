@@ -41,6 +41,10 @@ impl UsePath {
         self.path.push(path.to_string());
     }
 
+    pub fn first(&self) -> Option<&String> {
+        self.path.first()
+    }
+
     pub fn to_path(&self) -> String {
         let mut path = self.path.join("/");
         path.push_str(".rz");

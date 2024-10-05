@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use crate::label::LabelGen;
 use crate::parser::*;
 use crate::path::UsePath;
 use crate::tokenizer::TokenType::*;
@@ -23,7 +24,9 @@ pub struct Generator<'a> {
     functions: String,
     stack: Vec<Option<Ident>>,
     scopes: Vec<usize>,
-    num_jmps: usize,
+    for_counter: LabelGen,
+    if_counter: LabelGen,
+    if_end_counter: LabelGen,
     ext: HashSet<String>,
     global: String,
     imports: HashSet<UsePath>,
@@ -51,7 +54,9 @@ impl<'a> Generator<'a> {
             functions: String::new(),
             stack: Vec::new(),
             scopes: Vec::new(),
-            num_jmps: 0,
+            for_counter: LabelGen::new("for"),
+            if_counter: LabelGen::new("if"),
+            if_end_counter: LabelGen::new("if_end"),
             ext: HashSet::new(),
             global: String::new(),
             imports: HashSet::new(),
@@ -262,26 +267,25 @@ impl<'a> Generator<'a> {
 
     fn gen_if(&mut self, stmt_if: &'a StmtIf) -> String {
         let mut if_stmt = String::from("; If Start\n");
-        let final_jump = self.num_jmps + stmt_if.blocks.len();
+        let final_label = self.if_end_counter.next();
         for block in stmt_if.blocks.iter() {
             let expr = self.gen_expr(&block.expr);
             let scope = self.gen_scope(&block.stmts);
-            let num_jmps = self.num_jmps;
+            let curr_label = self.if_counter.next();
             if_stmt.push_str(&asm!(
                 {expr};
                 > "test rax, rax";
-                > "jz .if_{}", num_jmps;
+                > "jz {}", curr_label;
                 {scope};
-                > "jmp .if_{}", final_jump;
-                ".if_{}:", num_jmps;
+                > "jmp {}", final_label;
+                "{}:", curr_label;
             ));
-            self.num_jmps += 1;
         }
         if let Some(stmts) = &stmt_if.else_block {
             if_stmt.push_str(&self.gen_scope(stmts));
         }
         if_stmt.push_str(&asm!(
-            ".if_{}:", final_jump;
+            "{}:", final_label;
             "; If End";
         ));
         if_stmt
@@ -397,19 +401,19 @@ impl<'a> Generator<'a> {
     }
 
     fn gen_for(&mut self, stmt_for: &'a StmtFor) -> String {
-        let num_jmps = self.num_jmps;
-        self.num_jmps += 2;
+        let start_label = self.for_counter.next();
+        let end_label = self.for_counter.next();
         asm!(
             "; For Start";
             {self.gen_decl(&stmt_for.init)};
-            ".for_{}:", num_jmps;
+            "{}:", start_label;
             {self.gen_expr(&stmt_for.cond)};
             > "test rax, rax";
-            > "jz .for_{}", num_jmps + 1;
+            > "jz {}", end_label;
             {self.gen_scope(&stmt_for.stmts)};
             {self.gen_assign(&stmt_for.iter)};
-            > "jmp .for_{}", num_jmps;
-            ".for_{}:", num_jmps + 1;
+            > "jmp {}", start_label;
+            "{}:", end_label;
             "; For End";
         )
     }
@@ -488,6 +492,7 @@ impl<'a> Generator<'a> {
         asm!(> "pop {}", reg)
     }
 
+    // TODO i think this sucks
     fn get_func(&self) -> usize {
         for i in (0..self.stack.len()).rev() {
             match &self.stack[i] {
@@ -502,6 +507,7 @@ impl<'a> Generator<'a> {
         0
     }
 
+    // TODO i think this sucks
     fn get_loc(&self, ident: &String, t: Type) -> Option<usize> {
         let func = self.get_func();
         for i in (func..self.stack.len()).rev() {

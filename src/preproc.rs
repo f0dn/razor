@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
 use crate::{
-    path::UsePath, tokenizer::{Token, TokenType}, tokenlist::TokenList
+    path::UsePath,
+    tokenizer::{Token, TokenType},
+    tokenlist::TokenList,
 };
 
 pub struct MacroUse {
@@ -74,7 +76,10 @@ impl Preproc {
                     let token = self.consume();
                     let id = match self.consume().t_type {
                         TokenType::Var(id) => id,
-                        _ => panic!("Expected identifier"),
+                        err => panic!(
+                            "Expected identifier, got {}\nPrevious token was {}",
+                            err, token.t_type
+                        ),
                     };
                     self.consume_type(TokenType::RBr);
                     MacroArg::Id(token.t_type, id)
@@ -109,12 +114,14 @@ impl Preproc {
                 } => {
                     if self.peek_type(&TokenType::Hash) {
                         match token.t_type {
-                            TokenType::Var(var) => {
-                                if let Some(mac) = self.macros.remove(&var) {
+                            TokenType::Var(ref var) => {
+                                if let Some(mac) = self.macros.remove(var) {
                                     self.num_tokens_added = 0;
                                     self.process_macro_call(&mac.body, &mac.args);
                                     self.macros.insert(var.clone(), mac);
                                     self.tokens.back(self.num_tokens_added);
+                                } else {
+                                    body.push(MacroBody::Token(token));
                                 }
                             }
                             _ => unreachable!(),
@@ -127,6 +134,7 @@ impl Preproc {
                     t_type: TokenType::Hash,
                     line: _,
                 } => match &self.peek().unwrap().t_type {
+                    TokenType::Hash => body.push(MacroBody::Token(self.consume())),
                     TokenType::LPar => {
                         self.consume();
                         let mut repeat_body = Vec::new();
@@ -138,6 +146,7 @@ impl Preproc {
                         break;
                     }
                     TokenType::RBr => {
+                        self.consume();
                         break;
                     }
                     TokenType::Var(var) => {
@@ -163,7 +172,9 @@ impl Preproc {
 
         self.consume_type(TokenType::RPar);
 
-        let mut body = vec![MacroBody::Token(self.consume_type(TokenType::LBr))];
+        self.consume_type(TokenType::LBr);
+
+        let mut body = Vec::new();
 
         self.process_macro_body(&mut body);
 
@@ -234,7 +245,7 @@ impl Preproc {
                         });
                         self.num_tokens_added += 1;
                     } else {
-                        let var = repeat.vars.get(var).expect("Variable not found");
+                        let var = repeat.vars.get(var).unwrap_or_else(|| panic!("Variable {} not found", var));
                         self.tokens.push(var.clone());
                         self.num_tokens_added += 1;
                     }
