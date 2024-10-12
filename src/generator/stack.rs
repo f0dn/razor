@@ -1,5 +1,6 @@
 enum Type {
     Var(String),
+    Const(String, usize),
     Func,
     Scope,
     None,
@@ -36,6 +37,17 @@ impl Stack {
         None
     }
 
+    pub fn get_const(&self, name: &str) -> Option<usize> {
+        for var in self.stack.iter().rev() {
+            if let Type::Const(ref n, val) = var.t {
+                if n == name {
+                    return Some(val);
+                }
+            }
+        }
+        None
+    }
+
     pub fn get_func(&self) -> Option<usize> {
         let mut offset = 0;
         for var in self.stack.iter().rev() {
@@ -51,6 +63,13 @@ impl Stack {
         self.stack.push(Var {
             t: Type::Var(name),
             size,
+        });
+    }
+
+    pub fn push_const(&mut self, name: String, value: usize) {
+        self.stack.push(Var {
+            t: Type::Const(name, value),
+            size: 0,
         });
     }
 

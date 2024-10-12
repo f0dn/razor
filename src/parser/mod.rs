@@ -19,6 +19,7 @@ pub enum Stmt {
     Assign(StmtAssign),
     AssignAt(StmtAssignAt),
     Decl(StmtDecl),
+    Const(StmtConst),
     Exit(StmtExit),
     Expr(StmtExpr),
     For(StmtFor),
@@ -46,6 +47,11 @@ pub struct StmtAssignAt {
 }
 
 pub struct StmtDecl {
+    pub var: String,
+    pub expr: Expr,
+}
+
+pub struct StmtConst {
     pub var: String,
     pub expr: Expr,
 }
@@ -223,6 +229,12 @@ parse_fn! {
 parse_fn! {
     parse_decl -> StmtDecl {
         {Decl}, parse_ident_name() => var, {Eq}, parse_expr() => expr, {Semi},
+    }
+}
+
+parse_fn! {
+    parse_const -> StmtConst {
+        {Const}, parse_ident_name() => var, {Eq}, parse_expr() => expr, {Semi},
     }
 }
 
@@ -405,6 +417,10 @@ impl Parser {
             Decl => Ok(Stmt::Decl(
                 self.parse_decl()
                     .map_err(context("while parsing declaration"))?,
+            )),
+            Const => Ok(Stmt::Const(
+                self.parse_const()
+                    .map_err(context("while parsing const declaration"))?,
             )),
             If => Ok(Stmt::If(
                 self.parse_if()

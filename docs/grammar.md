@@ -25,6 +25,9 @@ use
 ### KW_EXIT
 exit
 
+### KW_CONST
+const
+
 ### IDENT
 [IDENT_START](#ident_start) [IDENT_CHAR](#ident_char)*
 
@@ -73,7 +76,7 @@ exit
 // .*
 
 ### DECL
-[KW_DECL](#kw_decl) [IDENT](#ident) = [EXPR](#expr) ;
+[KW_DECL](#kw_decl) | [KW_CONST](#kw_const) [IDENT](#ident) = [EXPR](#expr) ;
 
 ### EXIT
 [KW_EXIT](#kw_exit) [EXPR](#expr) ;

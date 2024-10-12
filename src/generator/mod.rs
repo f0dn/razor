@@ -92,6 +92,16 @@ impl<'a> Generator<'a> {
         }
     }
 
+    fn gen_const_literal(&mut self, literal: &'a ExprLiteral) -> usize {
+        match literal {
+            ExprLiteral::Asm(_asm) => panic!("Cannot use asm in constant expression"),
+            ExprLiteral::Int(int) => int.parse().unwrap(),
+            ExprLiteral::Char(char) => *char as usize,
+            // TODO support strings in constant expressions
+            ExprLiteral::Str(_string) => panic!("Cannot use string in constant expression"),
+        }
+    }
+
     fn gen_expr(&mut self, expr: &'a Expr) -> String {
         let expr_string = match expr {
             Expr::Literal(literal) => self.gen_literal(literal),
@@ -106,7 +116,11 @@ impl<'a> Generator<'a> {
                         }
                     }
                     None => {
-                        panic!("Unknown identifier '{}'", ident.name)
+                        let val = self.stack.get_const(&ident.name);
+                        match val {
+                            Some(val) => asm!(> "mov rax, {}", val),
+                            None => panic!("Unknown identifier '{}'", ident.name),
+                        }
                     }
                 }
             }
@@ -220,6 +234,38 @@ impl<'a> Generator<'a> {
         )
     }
 
+    fn gen_const_expr(&mut self, expr: &'a Expr) -> usize {
+        match expr {
+            Expr::Literal(literal) => self.gen_const_literal(literal),
+            Expr::Id(ident) => {
+                assert!(!ident.is_ref, "Cannot reference in constant expression");
+                self.stack
+                    .get_const(&ident.name)
+                    .unwrap_or_else(|| panic!("Unknown identifier {}", ident.name))
+            }
+            Expr::BinOp(bin_op) => {
+                let left = self.gen_const_expr(&bin_op.lhs);
+                let right = self.gen_const_expr(&bin_op.rhs);
+                match bin_op.op {
+                    Plus => left + right,
+                    Dash => left - right,
+                    Star => left * right,
+                    Slash => left / right,
+                    Per => left % right,
+                    DEq => (left == right) as usize,
+                    DPipe => (left != 0 || right != 0) as usize,
+                    DAmp => (left != 0 && right != 0) as usize,
+                    Lt => (left < right) as usize,
+                    Gt => (left > right) as usize,
+                    Ex => (right == 0) as usize,
+                    At => panic!("Cannot use '@' in constant expression"),
+                    _ => panic!("Unknown operator: {}", bin_op.op),
+                }
+            }
+            _ => panic!("Invalid constant expression"),
+        }
+    }
+
     fn gen_asm(&self, asm: &'a str) -> String {
         let mut split = asm.split('#');
         let mut string = split.next().unwrap().to_string();
@@ -320,6 +366,12 @@ impl<'a> Generator<'a> {
         )
     }
 
+    fn gen_const(&mut self, stmt_decl: &'a StmtConst) -> String {
+        let val = self.gen_const_expr(&stmt_decl.expr);
+        self.stack.push_const(stmt_decl.var.clone(), val);
+        String::new()
+    }
+
     fn gen_ret(&mut self, stmt_ret: &'a StmtRet) -> String {
         asm!(
             "; Return Start";
@@ -396,6 +448,7 @@ impl<'a> Generator<'a> {
                 Stmt::Ret(stmt_ret) => self.gen_ret(stmt_ret),
                 Stmt::Exit(stmt_exit) => self.gen_exit(stmt_exit),
                 Stmt::Decl(stmt_decl) => self.gen_decl(stmt_decl),
+                Stmt::Const(stmt_decl) => self.gen_const(stmt_decl),
                 Stmt::If(stmt_if) => self.gen_if(stmt_if),
                 Stmt::Assign(stmt_assign) => self.gen_assign(stmt_assign),
                 Stmt::Func(stmt_func) => {
