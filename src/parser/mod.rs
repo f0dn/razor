@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 use crate::path::UsePath;
+use crate::tokenizer::tokenlist::TokenList;
 use crate::tokenizer::TokenType::*;
 use crate::tokenizer::*;
-use crate::tokenizer::tokenlist::TokenList;
 
 pub struct Prog {
     pub stmts: Vec<Stmt>,
@@ -19,6 +19,7 @@ pub enum Stmt {
     Assign(StmtAssign),
     AssignAt(StmtAssignAt),
     Decl(StmtDecl),
+    DeclSize(StmtDeclSize),
     Const(StmtConst),
     Exit(StmtExit),
     Expr(StmtExpr),
@@ -49,6 +50,11 @@ pub struct StmtAssignAt {
 pub struct StmtDecl {
     pub var: String,
     pub expr: Expr,
+}
+
+pub struct StmtDeclSize {
+    pub var: String,
+    pub size: Expr,
 }
 
 pub struct StmtConst {
@@ -229,6 +235,12 @@ parse_fn! {
 parse_fn! {
     parse_decl -> StmtDecl {
         {Decl}, parse_ident_name() => var, {Eq}, parse_expr() => expr, {Semi},
+    }
+}
+
+parse_fn! {
+    parse_decl_size -> StmtDeclSize {
+        {Decl}, parse_ident_name() => var, {LBr}, parse_expr() => size, {RBr}, {Semi},
     }
 }
 
@@ -414,10 +426,19 @@ impl Parser {
                 self.parse_exit()
                     .map_err(context("while parsing exit statement"))?,
             )),
-            Decl => Ok(Stmt::Decl(
-                self.parse_decl()
-                    .map_err(context("while parsing declaration"))?,
-            )),
+            Decl => {
+                if self.peek_mult(3).t_type == LBr {
+                    Ok(Stmt::DeclSize(
+                        self.parse_decl_size()
+                            .map_err(context("while parsing declaration"))?,
+                    ))
+                } else {
+                    Ok(Stmt::Decl(
+                        self.parse_decl()
+                            .map_err(context("while parsing declaration"))?,
+                    ))
+                }
+            }
             Const => Ok(Stmt::Const(
                 self.parse_const()
                     .map_err(context("while parsing const declaration"))?,

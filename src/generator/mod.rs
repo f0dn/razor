@@ -366,6 +366,16 @@ impl<'a> Generator<'a> {
         )
     }
 
+    fn gen_decl_size(&mut self, stmt_decl: &'a StmtDeclSize) -> String {
+        let size = self.gen_const_expr(&stmt_decl.size);
+        self.stack.push(stmt_decl.var.clone(), size);
+        asm!(
+            "; Size Declaration Start";
+            > "sub rsp, {}", size;
+            "; Size Declaration End";
+        )
+    }
+
     fn gen_const(&mut self, stmt_decl: &'a StmtConst) -> String {
         let val = self.gen_const_expr(&stmt_decl.expr);
         self.stack.push_const(stmt_decl.var.clone(), val);
@@ -448,6 +458,7 @@ impl<'a> Generator<'a> {
                 Stmt::Ret(stmt_ret) => self.gen_ret(stmt_ret),
                 Stmt::Exit(stmt_exit) => self.gen_exit(stmt_exit),
                 Stmt::Decl(stmt_decl) => self.gen_decl(stmt_decl),
+                Stmt::DeclSize(stmt_decl) => self.gen_decl_size(stmt_decl),
                 Stmt::Const(stmt_decl) => self.gen_const(stmt_decl),
                 Stmt::If(stmt_if) => self.gen_if(stmt_if),
                 Stmt::Assign(stmt_assign) => self.gen_assign(stmt_assign),
