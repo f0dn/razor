@@ -55,6 +55,7 @@ const
 | [ASSIGN_AT](#assign_at) \
 | [COMMENT](#comment) \
 | [DECL](#decl) \
+| [SIZED_DECL](#sized_decl) \
 | [EXIT](#exit) \
 | [EXPR](#expr) ; \
 | [FOR](#for) \
@@ -77,6 +78,9 @@ const
 
 ### DECL
 [KW_DECL](#kw_decl) | [KW_CONST](#kw_const) [IDENT](#ident) = [EXPR](#expr) ;
+
+### SIZED_DECL
+[KW_DECL](#kw_decl) [IDENT](#ident) { [EXPR](#expr) } ;
 
 ### EXIT
 [KW_EXIT](#kw_exit) [EXPR](#expr) ;
