@@ -30,6 +30,7 @@ pub enum TokenType {
     Mac,
     Use,
     Const,
+    Size,
 
     // Symbols
     Semi,
@@ -100,6 +101,7 @@ impl fmt::Display for TokenType {
                 Mac => "mac",
                 Use => "use",
                 Const => "const",
+                Size => "size",
                 Semi => ";",
                 Eq => "=",
                 DEq => "==",
@@ -172,6 +174,7 @@ impl<'a> Tokenizer<'a> {
             "mac" => self.push_token(Mac),
             "use" => self.push_token(Use),
             "const" => self.push_token(Const),
+            "size" => self.push_token(Size),
             _ => self.push_token(Var(token)),
         }
     }

@@ -139,7 +139,7 @@ impl Compiler {
         self.files.insert(path.clone(), file_state);
     }
 
-    pub fn compile(&mut self, path: &str, out_path: &String, keep_asm: bool) {
+    pub fn compile(&mut self, path: &str, out_path: &str, keep_asm: bool) {
         self.compile_full(&UsePath::from_path(path), true);
 
         for (path, file_state) in &self.files {

@@ -296,6 +296,7 @@ impl Parser {
         Parser {
             tokens,
             op: HashMap::from([
+                (Size, 5),
                 (Ex, 4),
                 (At, 4),
                 (Star, 3),

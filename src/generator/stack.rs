@@ -1,3 +1,5 @@
+use std::{collections::HashMap, usize};
+
 enum Type {
     Var(String),
     Const(String, usize),
@@ -13,20 +15,33 @@ struct Var {
 
 pub struct Stack {
     stack: Vec<Var>,
+    current_offset: usize,
+    asm_sizes: HashMap<usize, &'static str>,
 }
 
 impl Stack {
     pub fn new() -> Stack {
-        Stack { stack: Vec::new() }
+        Stack {
+            stack: Vec::new(),
+            current_offset: 0,
+            asm_sizes: HashMap::from([(1, "byte"), (4, "dword"), (8, "qword")]),
+        }
     }
 
-    pub fn get(&self, name: &str) -> Option<usize> {
+    fn get_asm_size(&self, size: usize) -> &'static str {
+        self.asm_sizes.get(&size).expect("Invalid size")
+    }
+
+    pub fn get(&self, name: &str) -> Option<(String, usize)> {
         let mut offset = 0;
         for var in self.stack.iter().rev() {
             match var.t {
                 Type::Var(ref n) => {
                     if n == name {
-                        return Some(offset);
+                        return Some((
+                            format!("{} [rbp+{}]", self.get_asm_size(var.size), offset),
+                            var.size,
+                        ));
                     }
                 }
                 Type::Func => break,
@@ -59,7 +74,8 @@ impl Stack {
         None
     }
 
-    pub fn push(&mut self, name: String, size: usize) {
+    pub fn push(&mut self, name: String, size: usize) -> String {
+        if size > 8 - self.current_offset {}
         self.stack.push(Var {
             t: Type::Var(name),
             size,
@@ -80,12 +96,14 @@ impl Stack {
         });
     }
 
+    /*
     pub fn push_none(&mut self) {
         self.stack.push(Var {
             t: Type::None,
             size: 8,
         });
     }
+    */
 
     pub fn push_scope(&mut self) {
         self.stack.push(Var {

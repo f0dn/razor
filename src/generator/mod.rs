@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 mod label;
 mod stack;
@@ -10,6 +10,8 @@ use label::LabelGen;
 use stack::Stack;
 
 const REG_ARGS: [&str; 6] = ["rdi", "rsi", "rdx", "r10", "r8", "r9"];
+
+type ExprRes = (String, usize);
 
 pub struct Generator<'a> {
     pub text: String,
@@ -58,11 +60,11 @@ impl<'a> Generator<'a> {
         &self.imports
     }
 
-    fn gen_literal(&mut self, literal: &'a ExprLiteral) -> String {
+    fn gen_literal(&mut self, literal: &'a ExprLiteral) -> ExprRes {
         match literal {
-            ExprLiteral::Asm(asm) => self.gen_asm(asm),
-            ExprLiteral::Int(int) => asm!(> "mov rax, {}", int),
-            ExprLiteral::Char(char) => asm!(> "mov rax, {}", *char as u8),
+            ExprLiteral::Asm(asm) => (self.gen_asm(asm), 8),
+            ExprLiteral::Int(int) => (asm!(> "mov eax, {}", int), 4),
+            ExprLiteral::Char(char) => (asm!(> "mov al, {}", *char as u8), 1),
             // TODO use stack strings
             ExprLiteral::Str(string) => {
                 let mut asm = asm!(
@@ -87,7 +89,7 @@ impl<'a> Generator<'a> {
                     > "mov byte [rax+{}], 0",
                     string.len() + 16
                 ));
-                asm
+                (asm, 8)
             }
         }
     }
@@ -102,23 +104,23 @@ impl<'a> Generator<'a> {
         }
     }
 
-    fn gen_expr(&mut self, expr: &'a Expr) -> String {
+    fn gen_expr(&mut self, expr: &'a Expr) -> ExprRes {
         let expr_string = match expr {
             Expr::Literal(literal) => self.gen_literal(literal),
             Expr::Id(ident) => {
-                let loc = self.stack.get(&ident.name);
-                match loc {
-                    Some(loc) => {
+                let var = self.stack.get(&ident.name);
+                match var {
+                    Some((var, size)) => {
                         if ident.is_ref {
-                            asm!(> "lea rax, [rsp+{}]", loc)
+                            (asm!(> "lea rax, {}", var), size)
                         } else {
-                            asm!(> "mov rax, QWORD [rsp+{}]", loc)
+                            (asm!(> "mov rax, {}", var), size)
                         }
                     }
                     None => {
                         let val = self.stack.get_const(&ident.name);
                         match val {
-                            Some(val) => asm!(> "mov rax, {}", val),
+                            Some(val) => (asm!(> "mov rax, {}", val), 8),
                             None => panic!("Unknown identifier '{}'", ident.name),
                         }
                     }
@@ -182,6 +184,8 @@ impl<'a> Generator<'a> {
                     At => asm!(> "mov rax, [rcx]"),
                     _ => panic!("Unknown operator: {}", bin_op.op),
                 };
+                let lhs = self.gen_expr(&bin_op.lhs);
+                let rhs = self.gen_expr(&bin_op.rhs);
                 asm!(
                     {self.gen_expr(&bin_op.lhs)};
                     {self.push("rax")};
