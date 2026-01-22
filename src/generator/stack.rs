@@ -1,4 +1,6 @@
-use std::{collections::HashMap, usize};
+use std::collections::HashMap;
+
+pub const LARGEST_SIZE: usize = 8;
 
 enum Type {
     Var(String),
@@ -24,12 +26,12 @@ impl Stack {
         Stack {
             stack: Vec::new(),
             current_offset: 0,
-            asm_sizes: HashMap::from([(1, "byte"), (4, "dword"), (8, "qword")]),
+            asm_sizes: HashMap::from([(1, "byte"), (2, "word"), (4, "dword"), (8, "qword")]),
         }
     }
 
     fn get_asm_size(&self, size: usize) -> &'static str {
-        self.asm_sizes.get(&size).expect("Invalid size")
+        self.asm_sizes.get(&size).unwrap_or(&"qword") // TODO don't hardcode
     }
 
     pub fn get(&self, name: &str) -> Option<(String, usize)> {
@@ -39,7 +41,7 @@ impl Stack {
                 Type::Var(ref n) => {
                     if n == name {
                         return Some((
-                            format!("{} [rbp+{}]", self.get_asm_size(var.size), offset),
+                            format!("{} [rsp+{}]", self.get_asm_size(var.size), offset),
                             var.size,
                         ));
                     }
@@ -74,12 +76,22 @@ impl Stack {
         None
     }
 
-    pub fn push(&mut self, name: String, size: usize) -> String {
-        if size > 8 - self.current_offset {}
+    fn push_type(&mut self, size: usize, stack_type: Type) {
+        if size > LARGEST_SIZE - self.current_offset {
+            self.stack.push(Var {
+                t: Type::None,
+                size: LARGEST_SIZE - self.current_offset,
+            });
+        }
         self.stack.push(Var {
-            t: Type::Var(name),
+            t: stack_type,
             size,
         });
+        self.current_offset = (self.current_offset + size) % LARGEST_SIZE;
+    }
+
+    pub fn push(&mut self, name: String, size: usize) {
+        self.push_type(size, Type::Var(name));
     }
 
     pub fn push_const(&mut self, name: String, value: usize) {
@@ -90,20 +102,16 @@ impl Stack {
     }
 
     pub fn push_func(&mut self) {
-        self.stack.push(Var {
-            t: Type::Func,
-            size: 8,
-        });
+        self.push_type(LARGEST_SIZE, Type::Func);
     }
 
-    /*
+    // TODO remove
     pub fn push_none(&mut self) {
         self.stack.push(Var {
             t: Type::None,
             size: 8,
         });
     }
-    */
 
     pub fn push_scope(&mut self) {
         self.stack.push(Var {

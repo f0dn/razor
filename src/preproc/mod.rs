@@ -6,6 +6,7 @@ use crate::{
     tokenizer::{Token, TokenType},
 };
 
+#[derive(Clone)]
 pub struct MacroUse {
     pub id: String,
     pub path: UsePath,
@@ -43,6 +44,7 @@ enum RepeatType {
 pub struct Preproc {
     tokens: TokenList,
     num_tokens_added: usize,
+    preprocessed: bool,
     pub macros: HashMap<String, Macro>,
 }
 
@@ -52,6 +54,7 @@ impl Preproc {
         Preproc {
             tokens,
             num_tokens_added: 0,
+            preprocessed: false,
             macros: HashMap::new(),
         }
     }
@@ -318,6 +321,7 @@ impl Preproc {
     }
 
     pub fn preprocess_uses(&mut self) -> Vec<MacroUse> {
+        // TODO this shouldn't process uses inside macros
         let mut uses = Vec::new();
 
         while let Some(token) = self.tokens.next() {
@@ -334,7 +338,8 @@ impl Preproc {
         uses
     }
 
-    pub fn preprocess_macros(&mut self) {
+    fn preprocess_macros(&mut self) {
+        // TODO this will process inner macros before evaluating outer macros
         while let Some(token) = self.tokens.next() {
             if let TokenType::Mac = token.t_type {
                 self.tokens.remove_back();
@@ -345,7 +350,7 @@ impl Preproc {
         self.tokens.reset();
     }
 
-    pub fn preprocess_macro_calls(&mut self, macros: &HashMap<&String, &Macro>) {
+    fn preprocess_macro_calls(&mut self, macros: &HashMap<&String, &Macro>) {
         while let Some(token) = self.tokens.next() {
             if let TokenType::Var(name) = token.t_type {
                 if self.peek_type(&TokenType::Hash) {
@@ -359,19 +364,36 @@ impl Preproc {
         // TODO make sure we can have macros inside macros
     }
 
+    pub fn preprocess(&mut self, macros: &HashMap<&String, &Macro>) {
+        if self.preprocessed {
+            return;
+        }
+        // TODO this is a hack but needs more robust logic
+        self.preprocess_macros();
+        self.preprocess_macro_calls(macros);
+        self.preprocess_macros();
+        self.preprocessed = true;
+        // after preprocessing all that is left is to take the tokens or use the macros
+    }
+
+    pub fn is_preprocessed(&self) -> bool {
+        self.preprocessed
+    }
+
     pub fn take_tokens(&mut self) -> TokenList {
+        // TODO make sure this is only called once
         std::mem::replace(&mut self.tokens, TokenList::new())
     }
 
     fn peek(&self) -> Option<&Token> {
-        return self.tokens.peek();
+        self.tokens.peek()
     }
 
     fn peek_type(&self, t_type: &TokenType) -> bool {
-        return match self.peek() {
+        match self.peek() {
             Some(token) => &token.t_type == t_type,
             None => false,
-        };
+        }
     }
 
     fn consume(&mut self) -> Token {

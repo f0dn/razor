@@ -14,7 +14,7 @@ impl UsePath {
         UsePath {
             path: path
                 .strip_suffix(".rz")
-                .unwrap_or(path)
+                .unwrap_or(path) // TODO should probably hard error
                 .split("/")
                 .map(|s| s.to_string())
                 .collect(),

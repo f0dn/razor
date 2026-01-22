@@ -589,22 +589,19 @@ impl Parser {
     }
 
     pub fn parse(&mut self) {
-        self.parse_tree.stmts = match self.parse_mult(Eof) {
-            Ok(stmts) => stmts,
-            Err(e) => {
-                panic!("{}", e.msg);
-            }
-        };
+        self.parse_tree.stmts = self.parse_mult(Eof).unwrap_or_else(|e| {
+            panic!("{}", e.msg);
+        });
     }
 
     fn peek(&self) -> &Token {
         // TODO unwrap here
-        return self.tokens.peek().unwrap();
+        self.tokens.peek().unwrap()
     }
 
     fn peek_mult(&self, n: usize) -> &Token {
         // TODO unwrap here
-        return self.tokens.peek_mult(n).unwrap();
+        self.tokens.peek_mult(n).unwrap()
     }
 
     fn consume(&mut self) -> Token {

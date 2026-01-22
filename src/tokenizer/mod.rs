@@ -144,11 +144,11 @@ pub struct Tokenizer<'a> {
 
 impl<'a> Tokenizer<'a> {
     pub fn new(text: &'a str) -> Tokenizer<'a> {
-        return Tokenizer {
+        Tokenizer {
             chars: text.chars().peekable(),
             line: 1,
             tokens: TokenList::new(),
-        };
+        }
     }
 
     fn tokenize_word(&mut self) {
@@ -354,7 +354,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn peek(&mut self) -> Option<char> {
-        return self.chars.peek().copied();
+        self.chars.peek().copied()
     }
 
     fn next(&mut self) {

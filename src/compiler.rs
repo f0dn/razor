@@ -52,95 +52,74 @@ impl Compiler {
         }
     }
 
-    fn compile_for_macros(&mut self, path: &UsePath) {
-        if !self.files.contains_key(path) {
-            let mut file_state = FileState::new(path);
+    // TODO keep_asm should just be for debugging
+    pub fn compile(&mut self, path: &str, out_path: &str, keep_asm: bool) {
+        //TODO make sure the loop ends
+        //TODO handle recursive macros
 
-            let mut macros = HashMap::new();
+        let mut stack = vec![(UsePath::from_path(path), None, false, true, true)];
+        while let Some((
+            current_path,
+            macro_uses,
+            used_macros_preprocessed,
+            compile_full,
+            is_main,
+        )) = stack.pop()
+        {
+            let mut file_state = self
+                .files
+                .remove(&current_path)
+                .unwrap_or_else(|| FileState::new(&current_path));
 
-            let macro_uses = file_state.preproc.preprocess_uses();
+            if !file_state.preproc.is_preprocessed() {
+                let macro_uses = macro_uses.unwrap_or_else(|| file_state.preproc.preprocess_uses());
 
-            for macro_use in &macro_uses {
-                self.compile_for_macros(&macro_use.path);
-            }
-
-            for macro_use in &macro_uses {
-                if let Some(mac) = self
-                    .files
-                    .get(&macro_use.path)
-                    .unwrap()
-                    .preproc
-                    .macros
-                    .get(&macro_use.id)
-                {
-                    macros.insert(&macro_use.id, mac);
+                if !used_macros_preprocessed {
+                    stack.push((
+                        current_path.clone(),
+                        Some(macro_uses.clone()),
+                        true,
+                        compile_full,
+                        is_main,
+                    ));
+                    for macro_use in macro_uses {
+                        stack.push((macro_use.path, None, false, false, false));
+                    }
+                    self.files.insert(current_path, file_state);
+                    continue;
+                } else {
+                    let mut macros = HashMap::new();
+                    for macro_use in &macro_uses {
+                        if let Some(mac) = self
+                            .files
+                            .get(&macro_use.path)
+                            .unwrap() // TODO I think this never fails
+                            .preproc
+                            .macros
+                            .get(&macro_use.id)
+                        {
+                            macros.insert(&macro_use.id, mac);
+                        }
+                        file_state.preproc.preprocess(&macros);
+                    }
                 }
             }
 
-            file_state.preproc.preprocess_macro_calls(&macros);
+            if compile_full && file_state.compiled_text.is_none() {
+                let mut parser = Parser::new(file_state.preproc.take_tokens());
+                parser.parse();
 
-            file_state.preproc.preprocess_macros();
+                let mut generator = Generator::new(&current_path);
+                generator.gen(&parser.parse_tree, !is_main);
 
-            file_state.preproc.preprocess_macro_calls(&macros);
+                for link in generator.links() {
+                    stack.push((link.clone(), None, false, true, false));
+                }
 
-            self.files.insert(path.clone(), file_state);
-        }
-    }
-
-    fn compile_full(&mut self, path: &UsePath, is_main: bool) {
-        let mut file_state = if let Some(file_state) = self.files.remove(path) {
-            if file_state.compiled_text.is_some() {
-                self.files.insert(path.clone(), file_state);
-                return;
-            } else {
-                file_state
+                file_state.compiled_text = Some(generator.text);
             }
-        } else {
-            FileState::new(path)
-        };
-
-        let mut macros = HashMap::new();
-
-        let macro_uses = file_state.preproc.preprocess_uses();
-        for macro_use in &macro_uses {
-            self.compile_for_macros(&macro_use.path);
+            self.files.insert(current_path, file_state);
         }
-        for macro_use in &macro_uses {
-            if let Some(mac) = self
-                .files
-                .get(&macro_use.path)
-                .unwrap()
-                .preproc
-                .macros
-                .get(&macro_use.id)
-            {
-                macros.insert(&macro_use.id, mac);
-            }
-        }
-
-        file_state.preproc.preprocess_macro_calls(&macros);
-
-        file_state.preproc.preprocess_macros();
-
-        file_state.preproc.preprocess_macro_calls(&macros);
-
-        let mut parser = Parser::new(file_state.preproc.take_tokens());
-        parser.parse();
-
-        let mut generator = Generator::new(path);
-        generator.gen(&parser.parse_tree, !is_main);
-
-        for link in generator.links() {
-            self.compile_full(link, false);
-        }
-
-        file_state.compiled_text = Some(generator.text);
-
-        self.files.insert(path.clone(), file_state);
-    }
-
-    pub fn compile(&mut self, path: &str, out_path: &str, keep_asm: bool) {
-        self.compile_full(&UsePath::from_path(path), true);
 
         for (path, file_state) in &self.files {
             if let Some(compiled_text) = &file_state.compiled_text {
