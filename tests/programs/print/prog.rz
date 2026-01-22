@@ -1,0 +1,5 @@
+use std.io;
+
+io.println("Hello, World!");
+
+exit 0;

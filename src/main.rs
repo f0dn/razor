@@ -1,16 +1,8 @@
 use std::env::args;
 
-mod TODO;
-mod compiler;
-mod generator;
-mod parser;
-mod path;
-mod preproc;
-mod tokenizer;
+pub use razor::*;
 
-const ERROR_SIZE: usize = 5;
-
-fn main() {
+pub fn main() {
     let mut args = args();
     args.next();
     let inp_path = args.next().expect("No input file provided");
