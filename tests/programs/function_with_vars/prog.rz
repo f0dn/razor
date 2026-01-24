@@ -1,0 +1,6 @@
+func square(x) {
+    decl y = x * x;
+    return y;
+}
+
+exit square(5);

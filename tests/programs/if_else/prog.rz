@@ -1,0 +1,6 @@
+decl x = 2;
+if x == 3 {
+    exit 1;
+} else {
+    exit 0;
+}

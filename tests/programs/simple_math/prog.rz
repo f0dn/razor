@@ -1,0 +1,4 @@
+decl a = 10;
+decl b = 3;
+decl c = a + b * 2;
+exit c;

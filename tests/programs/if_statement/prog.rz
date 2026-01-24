@@ -1,0 +1,6 @@
+decl x = 7;
+if x > 5 {
+    exit 1;
+}
+
+exit 0;

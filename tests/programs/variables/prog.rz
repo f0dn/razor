@@ -1,0 +1,2 @@
+decl x = 5;
+exit x;
