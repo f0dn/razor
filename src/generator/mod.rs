@@ -127,6 +127,25 @@ impl<'a> Generator<'a> {
                     }
                 }
             }
+            Expr::UnOp(un_op) => {
+                let expr = self.gen_expr(&un_op.expr);
+                let op = match un_op.op {
+                    At => asm!(> "mov rax, [rax]"),
+                    Ex => asm!(
+                        > "cmp rax, 0";
+                        > "setz al";
+                        > "movzx rax, al";
+                    ),
+                    _ => panic!("Unknown unary operator: {}", un_op.op),
+                };
+                (
+                    asm!(
+                        {expr.0};
+                        {op};
+                    ),
+                    expr.1,
+                )
+            }
             Expr::BinOp(bin_op) => {
                 let op = match bin_op.op {
                     Plus => asm!(> "add rax, rcx"),
@@ -177,13 +196,7 @@ impl<'a> Generator<'a> {
                         > "xor al, ah";
                         > "movzx rax, al";
                     ),
-                    Ex => asm!(
-                        > "cmp rcx, 0";
-                        > "setz al";
-                        > "movzx rax, al";
-                    ),
-                    At => asm!(> "mov rax, [rcx]"),
-                    _ => panic!("Unknown operator: {}", bin_op.op),
+                    _ => panic!("Unknown binary operator: {}", bin_op.op),
                 };
                 let lhs = self.gen_expr(&bin_op.lhs);
                 let push = self.push("rax");

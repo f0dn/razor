@@ -102,6 +102,7 @@ pub struct StmtUse {
 }
 
 pub enum Expr {
+    UnOp(UnOp),
     BinOp(BinOp),
     Call(Box<ExprCall>),
     Id(Identifier),
@@ -120,6 +121,11 @@ pub struct BinOp {
     pub op: TokenType,
     pub lhs: Box<Expr>,
     pub rhs: Box<Expr>,
+}
+
+pub struct UnOp {
+    pub op: TokenType,
+    pub expr: Box<Expr>,
 }
 
 pub struct ExprCall {
@@ -155,7 +161,8 @@ fn context(context: &str) -> impl FnOnce(Error) -> Error + '_ {
 
 pub struct Parser {
     tokens: TokenList,
-    op: HashMap<TokenType, i8>,
+    unops: HashMap<TokenType, i8>,
+    op_prec: HashMap<TokenType, i8>,
     pub parse_tree: Prog,
 }
 
@@ -295,10 +302,9 @@ impl Parser {
         tokens.reset();
         Parser {
             tokens,
-            op: HashMap::from([
+            unops: HashMap::from([(Ex, 4), (At, 4)]),
+            op_prec: HashMap::from([
                 (Size, 5),
-                (Ex, 4),
-                (At, 4),
                 (Star, 3),
                 (Slash, 3),
                 (Per, 3),
@@ -387,12 +393,21 @@ impl Parser {
     }
 
     fn parse_expr_prec(&mut self, min_prec: i8) -> Result<Expr, Error> {
-        let mut lhs = self.parse_atom()?;
+        let mut lhs = if let Some(&prec) = self.unops.get(&self.peek().t_type) {
+            let op = self.consume().t_type;
+            let expr = self.parse_expr_prec(prec)?;
+            Expr::UnOp(UnOp {
+                op,
+                expr: Box::new(expr),
+            })
+        } else {
+            self.parse_atom()?
+        };
 
         loop {
             let tk = self.peek();
 
-            let prec = match self.op.get(&tk.t_type) {
+            let prec = match self.op_prec.get(&tk.t_type) {
                 Some(p) => *p,
                 None => break,
             };
@@ -409,6 +424,7 @@ impl Parser {
                 rhs: Box::new(rhs),
             });
         }
+
         Ok(lhs)
     }
 
@@ -472,18 +488,10 @@ impl Parser {
                 self.consume();
                 Ok(Stmt::Blank)
             }
-            Int(_) => {
-                if self.peek_mult(2).t_type == At {
-                    self.consume();
-                    return Ok(Stmt::AssignAt(
-                        self.parse_assign_at()
-                            .map_err(context("while parsing assignment"))?,
-                    ));
-                }
-                Ok(Stmt::Expr(StmtExpr {
-                    expr: self.parse_expr()?,
-                }))
-            }
+            At => Ok(Stmt::AssignAt(
+                self.parse_assign_at()
+                    .map_err(context("while parsing assignment"))?,
+            )),
             Use => Ok(Stmt::Use(
                 self.parse_use()
                     .map_err(context("while parsing use statement"))?,

@@ -17,6 +17,8 @@ fn test_programs() {
             continue;
         }
 
+        println!("Testing program: {:?}", entry.path());
+
         let mut path = entry.path();
         let mut exp_out_path = path.clone();
         let mut exp_exit_path = path.clone();

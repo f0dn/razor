@@ -323,16 +323,8 @@ impl<'a> Tokenizer<'a> {
                             _ => self.push_token(Slash),
                         }
                     }
-                    '!' => {
-                        // TODO this is horrible
-                        self.push_token(Int(String::from("0")));
-                        self.push_and_next(Ex);
-                    }
-                    '@' => {
-                        // TODO this is horrible
-                        self.push_token(Int(String::from("0")));
-                        self.push_and_next(At);
-                    }
+                    '!' => self.push_and_next(Ex),
+                    '@' => self.push_and_next(At),
                     '\'' => self.tokenize_char(),
                     '`' => self.tokenize_asm(),
                     '"' => self.tokenize_string(),
