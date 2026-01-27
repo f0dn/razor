@@ -52,6 +52,12 @@ impl UsePath {
     }
 }
 
+impl Default for UsePath {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Display for UsePath {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}", self.path.join("."))

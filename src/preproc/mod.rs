@@ -382,7 +382,7 @@ impl Preproc {
 
     pub fn take_tokens(&mut self) -> TokenList {
         // TODO make sure this is only called once
-        std::mem::replace(&mut self.tokens, TokenList::new())
+        std::mem::take(&mut self.tokens)
     }
 
     fn peek(&self) -> Option<&Token> {

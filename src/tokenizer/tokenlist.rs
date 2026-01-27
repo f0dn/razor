@@ -141,3 +141,9 @@ impl TokenList {
         std::mem::swap(&mut self.first, &mut self.second);
     }
 }
+
+impl Default for TokenList {
+    fn default() -> Self {
+        Self::new()
+    }
+}
